@@ -104,7 +104,7 @@ def build_program(root_path: str, err) -> tuple[Code, dict] | None:
             raise WeftError(E_IMPORT_CYCLE, "import cycle: " + " -> ".join(stack + [label]),
                             None, stage="check")
         state[name] = "visiting"
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:   # -sig: drop a leading BOM
             src = f.read()
         srcs[label] = src
         ast = parse(tokenize(src, label))
@@ -173,8 +173,11 @@ def dis_file(path: str, out, err) -> int:
 def _read_target(target: str, err) -> tuple[str, str] | None:
     try:
         if target == "-":
-            return sys.stdin.read(), "<stdin>"
-        with open(target, "r", encoding="utf-8") as f:
+            src = sys.stdin.read()
+            if src.startswith("﻿"):    # strip a leading BOM (files use utf-8-sig)
+                src = src[1:]
+            return src, "<stdin>"
+        with open(target, "r", encoding="utf-8-sig") as f:   # -sig: drop a leading BOM
             return f.read(), target
     except UnicodeDecodeError as e:
         err.write(f"weft: {target}: source is not valid UTF-8 ({e})\n")

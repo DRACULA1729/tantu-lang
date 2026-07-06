@@ -113,6 +113,8 @@ def repl(stdin, stdout) -> int:
             if line == "":  # EOF
                 stdout.write("\n")
                 return 0
+            if line.startswith("﻿"):   # strip a pasted leading BOM
+                line = line[1:]
             buf = line
             # §6.4: the continuation decision is made ONCE, on the first line. In
             # continuation mode a blank line (or EOF) submits the whole buffer.
