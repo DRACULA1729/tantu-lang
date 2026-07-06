@@ -1,0 +1,33 @@
+fn map[T, U](xs: List[T], f: (T) -> U) -> List[U]:
+    var out: List[U] = []
+    for x in xs:
+        out = push(out, f(x))
+    out
+
+fn filter[T](xs: List[T], keep: (T) -> Bool) -> List[T]:
+    var out: List[T] = []
+    for x in xs:
+        if keep(x):
+            out = push(out, x)
+    out
+
+fn fold[T, A](xs: List[T], init: A, step: (A, T) -> A) -> A:
+    var acc = init
+    for x in xs:
+        acc = step(acc, x)
+    acc
+
+fn dbl(n: Int) -> Int:
+    n * 2
+
+fn is_even(n: Int) -> Bool:
+    n % 2 == 0
+
+fn join(acc: Str, n: Int) -> Str:
+    acc + str(n)
+
+fn main() -> Unit:
+    let nums = [1, 2, 3, 4]
+    print(map(nums, dbl))
+    print(filter(nums, is_even))
+    print(fold(nums, "", join))

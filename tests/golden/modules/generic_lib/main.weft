@@ -1,0 +1,12 @@
+import util
+
+fn sq(n: Int) -> Int:
+    n * n
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn main() -> Unit:
+    let xs = [1, 2, 3]
+    print(util.map(xs, sq))
+    print(util.fold(xs, 0, add))

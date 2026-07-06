@@ -1,0 +1,4 @@
+let x = 10
+var y = 5
+y = y + x
+print(y)

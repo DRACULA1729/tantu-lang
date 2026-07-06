@@ -1,0 +1,25 @@
+fn producer(out: Chan[Int], done: Chan[Int], base: Int) -> Unit:
+    var i = 0
+    while i < 3:
+        send(out, base + i)
+        i = i + 1
+    send(done, 1)
+
+fn main() -> Unit:
+    let out = chan[Int](32)
+    let done = chan[Int](8)
+    spawn producer(out, done, 10)
+    spawn producer(out, done, 20)
+    spawn producer(out, done, 30)
+    var d = 0
+    while d < 3:
+        match recv(done):
+            Some(_) => d = d + 1
+            None => break
+    close(out)
+    var total = 0
+    loop:
+        match recv(out):
+            Some(v) => total = total + v
+            None => break
+    print(total)

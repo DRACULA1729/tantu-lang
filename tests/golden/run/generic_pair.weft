@@ -1,0 +1,17 @@
+struct Pair[A, B]:
+    first: A
+    second: B
+
+fn swap[A, B](p: Pair[A, B]) -> Pair[B, A]:
+    Pair(p.second, p.first)
+
+fn main() -> Unit:
+    let p = Pair(1, "hello")
+    print(p.first)
+    print(p.second)
+    let q = swap(p)
+    print(q.first)
+    print(q.second)
+    let nested: Pair[Int, Pair[Str, Bool]] = Pair(7, Pair("x", true))
+    print(nested.second.first)
+    print(nested.second.second)

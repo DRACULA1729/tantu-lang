@@ -1,0 +1,12 @@
+fn delayed(c: Chan[Int], ms: Int, v: Int) -> Unit:
+    sleep(ms)
+    send(c, v)
+
+fn main() -> Unit:
+    let c = chan[Int](8)
+    spawn delayed(c, 30, 3)
+    spawn delayed(c, 10, 1)
+    spawn delayed(c, 20, 2)
+    print(recv(c))
+    print(recv(c))
+    print(recv(c))

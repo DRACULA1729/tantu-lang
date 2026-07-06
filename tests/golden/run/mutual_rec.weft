@@ -1,0 +1,13 @@
+fn is_even(n: Int) -> Bool:
+    if n == 0:
+        return true
+    is_odd(n - 1)
+
+fn is_odd(n: Int) -> Bool:
+    if n == 0:
+        return false
+    is_even(n - 1)
+
+fn main() -> Unit:
+    print(is_even(10))
+    print(is_odd(7))

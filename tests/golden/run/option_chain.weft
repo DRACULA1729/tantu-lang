@@ -1,0 +1,7 @@
+fn first(s: Str) -> Option[Str]:
+    let c = get(chars(s), 0)?
+    Some(c)
+
+fn main() -> Unit:
+    print(first("hi"))
+    print(first(""))

@@ -1,0 +1,9 @@
+enum A:
+    X
+enum B:
+    Y
+
+fn f(a: A) -> Int:
+    match a:
+        Y => 1
+        _ => 0

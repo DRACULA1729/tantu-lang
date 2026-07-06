@@ -1,0 +1,4 @@
+fn twice(n: Int) -> Int:
+    n + n
+
+print(twice(21))

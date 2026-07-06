@@ -1,0 +1,7 @@
+fn main() -> Unit:
+    let xs = push(push([1, 2], 3), 4)
+    print(len(xs))
+    print(xs[0])
+    print(get(xs, 99))
+    print(get(xs, 1))
+    print(concat([1], [2, 3]))

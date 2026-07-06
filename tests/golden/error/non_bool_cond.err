@@ -1,0 +1,3 @@
+non_bool_cond.weft:1:4: check error [E0104]: condition must be Bool
+  if 1:
+     ^

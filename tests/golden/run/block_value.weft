@@ -1,0 +1,12 @@
+fn classify(n: Int) -> Str:
+    if n < 0:
+        "neg"
+    elif n == 0:
+        "zero"
+    else:
+        "pos"
+
+fn main() -> Unit:
+    print(classify(-3))
+    print(classify(0))
+    print(classify(7))

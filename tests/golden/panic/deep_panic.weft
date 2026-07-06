@@ -1,0 +1,8 @@
+fn c() -> Int:
+    10 / 0
+fn b() -> Int:
+    c()
+fn a() -> Int:
+    b()
+fn main() -> Unit:
+    print(a())

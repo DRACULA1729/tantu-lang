@@ -1,0 +1,6 @@
+fn main() -> Unit:
+    let cs = chars("abc")
+    print(len(cs))
+    print(substring("hello", 1, 4))
+    print(parse_int("42"))
+    print(parse_int("x"))

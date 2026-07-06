@@ -1,0 +1,3 @@
+fn main() -> Unit:
+    let c = chan[Int]()
+    print(recv(c))

@@ -1,0 +1,4 @@
+fn main() -> Unit:
+    let (n, w) = (1, "one")
+    print(n)
+    print(w)

@@ -1,0 +1,7 @@
+fn make_adder(n: Int) -> (Int) -> Int:
+    fn(x: Int) -> Int: x + n
+
+fn main() -> Unit:
+    let add10 = make_adder(10)
+    print(add10(5))
+    print(add10(32))

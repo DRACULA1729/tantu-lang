@@ -1,0 +1,7 @@
+struct Point:
+    x: Float
+    y: Float
+
+fn main() -> Unit:
+    let p = Point(1.5, 2.5)
+    print(p.x + p.y)

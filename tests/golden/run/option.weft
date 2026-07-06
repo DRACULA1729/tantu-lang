@@ -1,0 +1,14 @@
+fn find(id: Int) -> Option[Str]:
+    if id == 1:
+        Some("ada")
+    else:
+        None
+
+fn describe(id: Int) -> Str:
+    match find(id):
+        Some(name) => name
+        None => "nobody"
+
+fn main() -> Unit:
+    print(describe(1))
+    print(describe(2))

@@ -1,0 +1,24 @@
+enum Shape:
+    Circle(Float)
+    Rect(Float, Float)
+
+fn area(s: Shape) -> Float:
+    match s:
+        Circle(r) => 3.14159 * r * r
+        Rect(w, h) => w * h
+
+fn worker(jobs: Chan[Shape], out: Chan[Float]) -> Unit:
+    loop:
+        match recv(jobs):
+            Some(s) => send(out, area(s))
+            None => break
+
+fn main() -> Unit:
+    let jobs = chan[Shape](8)
+    let out = chan[Float](8)
+    spawn worker(jobs, out)
+    send(jobs, Circle(1.0))
+    send(jobs, Rect(3.0, 4.0))
+    close(jobs)
+    print(recv(out))
+    print(recv(out))

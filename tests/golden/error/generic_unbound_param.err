@@ -1,0 +1,3 @@
+generic_unbound_param.weft:1:19: check error [E0115]: unknown type 'T'
+  fn bad(x: Int) -> T:
+                    ^

@@ -1,0 +1,7 @@
+module_var_in_fn.weft:3:5: check error [E0103]: cannot assign to mutable binding 'g' from inside a function
+      g = g + 1
+      ^^^^^^^^^
+
+module_var_in_fn.weft:3:9: check error [E0103]: cannot access mutable binding 'g' from inside a function; copy it into a 'let' or pass it as a parameter
+      g = g + 1
+          ^

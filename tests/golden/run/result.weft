@@ -1,0 +1,13 @@
+fn parse_pos(n: Int) -> Result[Int, Str]:
+    if n > 0:
+        Ok(n)
+    else:
+        Err("not positive")
+
+fn main() -> Unit:
+    match parse_pos(5):
+        Ok(v) => print(v)
+        Err(e) => print(e)
+    match parse_pos(-2):
+        Ok(v) => print(v)
+        Err(e) => print(e)

@@ -1,0 +1,3 @@
+dangling_op.weft:1:10: parse error [P001]: unexpected ')', expected an expression
+  print(1 +)
+           ^

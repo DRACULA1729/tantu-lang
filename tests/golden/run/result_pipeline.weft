@@ -1,0 +1,14 @@
+fn parse_pos(s: Str) -> Result[Int, Str]:
+    match parse_int(s):
+        Some(n) => if n > 0: Ok(n) else: Err("not positive")
+        None => Err("not a number")
+
+fn add_two(a: Str, b: Str) -> Result[Int, Str]:
+    let x = parse_pos(a)?
+    let y = parse_pos(b)?
+    Ok(x + y)
+
+fn main() -> Unit:
+    print(add_two("3", "4"))
+    print(add_two("3", "-1"))
+    print(add_two("x", "4"))

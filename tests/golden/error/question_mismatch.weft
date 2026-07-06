@@ -1,0 +1,5 @@
+fn parse_pos(s: Str) -> Result[Int, Str]:
+    Ok(1)
+fn f() -> Option[Int]:
+    let x = parse_pos("3")?
+    Some(x)

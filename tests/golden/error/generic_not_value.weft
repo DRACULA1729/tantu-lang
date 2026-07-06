@@ -1,0 +1,6 @@
+fn id[T](x: T) -> T:
+    x
+
+fn main() -> Unit:
+    let g = id
+    print(g(1))

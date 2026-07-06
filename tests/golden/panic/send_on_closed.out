@@ -1,0 +1,7 @@
+panic [R003]: send on closed channel
+  in main at send_on_closed.weft:4:5
+      send(c, 1)
+      ^^^^^^^^^^
+  in <module> at send_on_closed.weft:1:1
+  fn main() -> Unit:
+  ^^^^^^^

@@ -1,0 +1,8 @@
+<module>/0 (locals=0, globals=0):
+   0  LOAD_CONST      0         ; 1
+   1  PRINT
+   2  POP
+   3  LOAD_CONST      1         ; 2
+   4  PRINT
+   5  POP
+   6  HALT

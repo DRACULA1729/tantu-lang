@@ -1,0 +1,18 @@
+enum Tree[T]:
+    Leaf
+    Node(Tree[T], T, Tree[T])
+
+fn size[T](t: Tree[T]) -> Int:
+    match t:
+        Leaf => 0
+        Node(l, _, r) => 1 + size(l) + size(r)
+
+fn sum(t: Tree[Int]) -> Int:
+    match t:
+        Leaf => 0
+        Node(l, v, r) => v + sum(l) + sum(r)
+
+fn main() -> Unit:
+    let t: Tree[Int] = Node(Node(Leaf, 1, Leaf), 2, Node(Leaf, 3, Leaf))
+    print(size(t))
+    print(sum(t))

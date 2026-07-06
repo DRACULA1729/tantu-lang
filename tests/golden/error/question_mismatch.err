@@ -1,0 +1,3 @@
+question_mismatch.weft:4:13: check error [E0106]: '?' on Result[_, Str] requires the function to return Result[_, Str], but it returns Option[Int]
+      let x = parse_pos("3")?
+              ^^^^^^^^^^^^^^^

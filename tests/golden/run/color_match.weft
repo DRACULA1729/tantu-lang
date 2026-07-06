@@ -1,0 +1,15 @@
+enum Color:
+    Red
+    Green
+    Custom(Int, Int, Int)
+
+fn describe(c: Color) -> Str:
+    match c:
+        Red => "red"
+        Custom(r, _, _) => "custom"
+        _ => "other"
+
+fn main() -> Unit:
+    print(describe(Red))
+    print(describe(Green))
+    print(describe(Custom(1, 2, 3)))

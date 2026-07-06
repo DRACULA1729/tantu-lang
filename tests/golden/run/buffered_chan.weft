@@ -1,0 +1,9 @@
+fn main() -> Unit:
+    let c = chan[Int](2)
+    send(c, 1)
+    send(c, 2)
+    close(c)
+    loop:
+        match recv(c):
+            Some(v) => print(v)
+            None => break

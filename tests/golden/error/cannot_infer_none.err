@@ -1,0 +1,3 @@
+cannot_infer_none.weft:2:13: check error [E0119]: cannot infer type argument 'T' of Option in 'None'; add an annotation
+      let x = None
+              ^^^^

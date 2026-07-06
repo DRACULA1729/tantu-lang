@@ -1,0 +1,4 @@
+fn main() -> Unit:
+    var count = 0
+    let f = fn() -> Int: count
+    print(f())

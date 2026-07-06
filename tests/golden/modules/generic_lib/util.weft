@@ -1,0 +1,11 @@
+fn map[T, U](xs: List[T], f: (T) -> U) -> List[U]:
+    var out: List[U] = []
+    for x in xs:
+        out = push(out, f(x))
+    out
+
+fn fold[T, A](xs: List[T], init: A, step: (A, T) -> A) -> A:
+    var acc = init
+    for x in xs:
+        acc = step(acc, x)
+    acc

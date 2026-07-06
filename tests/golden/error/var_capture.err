@@ -1,0 +1,3 @@
+var_capture.weft:3:26: check error [E0103]: cannot capture mutable binding 'count'; copy it into a 'let' first
+      let f = fn() -> Int: count
+                           ^^^^^

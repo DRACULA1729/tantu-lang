@@ -1,0 +1,14 @@
+fn checked_div(a: Int, b: Int) -> Result[Int, Str]:
+    if b == 0:
+        Err("divide by zero")
+    else:
+        Ok(a / b)
+
+fn compute(a: Int, b: Int, c: Int) -> Result[Int, Str]:
+    let x = checked_div(a, b)?
+    let y = checked_div(x, c)?
+    Ok(y)
+
+fn main() -> Unit:
+    print(compute(100, 5, 2))
+    print(compute(100, 0, 2))

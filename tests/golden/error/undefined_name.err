@@ -1,0 +1,3 @@
+undefined_name.weft:1:7: check error [E0111]: unknown name 'x'
+  print(x)
+        ^

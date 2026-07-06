@@ -1,0 +1,7 @@
+two_errors.weft:1:9: check error [E0112]: operands of '+' must have the same type, found Int and Bool
+  let a = 1 + true
+          ^^^^^^^^
+
+two_errors.weft:2:9: check error [E0111]: unknown name 'c'
+  let b = c + 2
+          ^

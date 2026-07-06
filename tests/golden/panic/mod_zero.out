@@ -1,0 +1,4 @@
+panic [R001]: division or modulo by zero
+  in <module> at mod_zero.weft:1:7
+  print(5 % 0)
+        ^^^^^

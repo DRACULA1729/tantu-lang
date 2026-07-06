@@ -1,0 +1,4 @@
+generic_not_value.weft:5:13: check error [E0136]: generic function 'id' is not a first-class value
+      let g = id
+              ^^
+  hint: call it directly — type arguments are always inferred — or wrap it in a lambda with concrete parameter types

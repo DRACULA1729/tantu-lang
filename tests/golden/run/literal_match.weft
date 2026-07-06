@@ -1,0 +1,10 @@
+fn name(n: Int) -> Str:
+    match n:
+        0 => "zero"
+        1 => "one"
+        _ => "many"
+
+fn main() -> Unit:
+    print(name(0))
+    print(name(1))
+    print(name(42))

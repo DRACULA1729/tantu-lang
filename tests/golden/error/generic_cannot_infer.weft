@@ -1,0 +1,6 @@
+fn none_of[T]() -> Option[T]:
+    None
+
+fn main() -> Unit:
+    let z = none_of()
+    print("x")

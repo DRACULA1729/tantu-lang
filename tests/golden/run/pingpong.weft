@@ -1,0 +1,18 @@
+fn pong(c: Chan[Int], d: Chan[Int]) -> Unit:
+    loop:
+        match recv(c):
+            Some(n) => send(d, n + 1)
+            None => break
+
+fn main() -> Unit:
+    let c = chan[Int]()
+    let d = chan[Int]()
+    spawn pong(c, d)
+    var i = 0
+    while i < 5:
+        send(c, i)
+        match recv(d):
+            Some(r) => print(r)
+            None => break
+        i = i + 1
+    close(c)

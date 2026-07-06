@@ -1,0 +1,2 @@
+let s = 85
+print(if s >= 90: 1 elif s >= 80: 2 else: 3)

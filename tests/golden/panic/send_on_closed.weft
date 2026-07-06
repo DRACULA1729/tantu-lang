@@ -1,0 +1,4 @@
+fn main() -> Unit:
+    let c = chan[Int](1)
+    close(c)
+    send(c, 1)

@@ -1,0 +1,22 @@
+# Virtual environments — NEVER commit (two of three old attempts bundled a whole venv)
+.venv/
+venv/
+env/
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Old abandoned attempts, kept for reference only (they bundle Windows venvs)
+/Interpreter/Compiler/
+/Final/Final/
+
+# Golden-test scratch
+tests/**/*.actual
+
+# OS / editor noise
+.DS_Store
+*.swp

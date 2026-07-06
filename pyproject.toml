@@ -1,0 +1,20 @@
+[project]
+name = "weft"
+version = "0.1.0"
+description = "Weft — a statically-typed, Python-readable language with fibers + channels, compiled to bytecode and run on a hand-built stack VM."
+requires-python = ">=3.12"
+dependencies = []  # zero third-party runtime dependencies — deliberate (see DESIGN.md)
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.4"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["weft"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

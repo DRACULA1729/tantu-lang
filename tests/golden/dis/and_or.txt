@@ -1,0 +1,8 @@
+<module>/0 (locals=0, globals=1):
+   0  LOAD_CONST      0         ; True
+   1  DUP
+   2  JUMP_IF_FALSE   5
+   3  POP
+   4  LOAD_CONST      1         ; False
+   5  STORE_GLOBAL    0
+   6  HALT

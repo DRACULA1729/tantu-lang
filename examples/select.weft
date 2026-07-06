@@ -1,0 +1,25 @@
+# `select` waits on several channels at once and takes the first ready arm.
+# The canonical use is a timeout: race real work against a fiber that sleeps then signals.
+
+fn worker(result: Chan[Int]) -> Unit:
+    sleep(10)             # pretend this is real work
+    send(result, 42)
+
+fn timeout(fired: Chan[Bool]) -> Unit:
+    sleep(50)             # deadline: 50ms
+    send(fired, true)
+
+fn main() -> Unit:
+    let result = chan[Int]()
+    let fired = chan[Bool]()
+    spawn worker(result)
+    spawn timeout(fired)
+
+    # the worker (10ms) beats the timeout (50ms), so the first arm wins
+    select:
+        v = recv(result) =>
+            match v:
+                Some(n) => print(n)
+                None => print("worker channel closed")
+        deadline = recv(fired) =>
+            print("timed out")

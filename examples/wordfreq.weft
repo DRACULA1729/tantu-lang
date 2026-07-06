@@ -1,0 +1,25 @@
+struct WC:
+    word: Str
+    count: Int
+
+fn bump(acc: List[WC], w: Str) -> List[WC]:
+    var out: List[WC] = []
+    var found = false
+    for e in acc:
+        if e.word == w:
+            out = push(out, WC(e.word, e.count + 1))
+            found = true
+        else:
+            out = push(out, e)
+    if found:
+        out
+    else:
+        push(out, WC(w, 1))
+
+fn main() -> Unit:
+    let words = split("the cat the dog the cat", " ")
+    var acc: List[WC] = []
+    for w in words:
+        acc = bump(acc, w)
+    for e in acc:
+        print(e.word + ": " + str(e.count))

@@ -1,0 +1,8 @@
+fn f(t: (Int, Int)) -> Int:
+    match t:
+        (0, y) => y
+        (x, _) => x
+
+fn main() -> Unit:
+    print(f((0, 42)))
+    print(f((7, 8)))

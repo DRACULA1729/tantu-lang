@@ -1,0 +1,38 @@
+# Generics let one definition work over any type. They are fully parametric (no bounds) and
+# ERASED — a generic fn compiles to a single function; type arguments are always inferred.
+
+fn map[T, U](xs: List[T], f: (T) -> U) -> List[U]:
+    var out: List[U] = []
+    for x in xs:
+        out = push(out, f(x))
+    out
+
+fn fold[T, A](xs: List[T], init: A, step: (A, T) -> A) -> A:
+    var acc = init
+    for x in xs:
+        acc = step(acc, x)
+    acc
+
+# a generic data structure, used at two different element types
+struct Pair[A, B]:
+    first: A
+    second: B
+
+fn swap[A, B](p: Pair[A, B]) -> Pair[B, A]:
+    Pair(p.second, p.first)
+
+fn dbl(n: Int) -> Int:
+    n * 2
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn main() -> Unit:
+    let nums = [1, 2, 3, 4]
+    print(map(nums, dbl))          # [2, 4, 6, 8]
+    print(fold(nums, 0, add))      # 10
+
+    let p = Pair(1, "one")
+    let q = swap(p)                # Pair[Str, Int]
+    print(q.first)                 # one
+    print(q.second)                # 1

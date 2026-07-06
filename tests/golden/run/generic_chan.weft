@@ -1,0 +1,18 @@
+fn pump[T](src: Chan[T], dst: Chan[T]) -> Unit:
+    loop:
+        match recv(src):
+            Some(v) => send(dst, v)
+            None => break
+    close(dst)
+
+fn main() -> Unit:
+    let a = chan[Int](4)
+    let b = chan[Int](4)
+    send(a, 10)
+    send(a, 20)
+    close(a)
+    spawn pump(a, b)
+    loop:
+        match recv(b):
+            Some(v) => print(v)
+            None => break

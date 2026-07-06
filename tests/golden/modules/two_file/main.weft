@@ -1,0 +1,6 @@
+import mathlib
+
+fn main() -> Unit:
+    print(mathlib.square(5))
+    print(mathlib.cube(3))
+    print(mathlib.answer)
