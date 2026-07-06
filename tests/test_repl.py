@@ -105,3 +105,120 @@ def test_deep_nesting_does_not_end_the_session():
     assert "42\n" in out
     assert rc == 0
     assert_no_traceback(out)
+
+
+# --- multi-line continuation (DESIGN §6.4: first-line decision, blank line submits) ---
+
+
+def test_multiline_fn_body_then_call():
+    """A multi-statement fn body entered across lines (blank line submits), then called."""
+    out, rc = drive(
+        "fn add3(a: Int, b: Int, c: Int) -> Int:\n"
+        "    let s = a + b\n"
+        "    return s + c\n"
+        "\n"                     # blank line submits the block
+        "add3(1, 2, 3)\n"
+    )
+    assert "6\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_multiline_match_expression():
+    """A multi-arm match entered across lines evaluates."""
+    out, rc = drive(
+        "let o = Some(41)\n"
+        "match o:\n"
+        "    Some(n) => n + 1\n"
+        "    None => 0\n"
+        "\n"
+        "9\n"                    # session still alive after the block
+    )
+    assert "42\n" in out
+    assert "9\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_multiline_if_else_block():
+    out, rc = drive(
+        "if 1 < 2:\n"
+        '    print("yes")\n'
+        "else:\n"
+        '    print("no")\n'
+        "\n"
+    )
+    assert "yes\n" in out
+    assert "no\n" not in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_comment_with_open_paren_does_not_wedge():
+    """FE-6: a comment line containing '(' must not enter continuation or wedge."""
+    out, rc = drive("# note (\n1 + 1\n")
+    assert "2\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_comment_ending_in_colon_does_not_continue():
+    """FE-6: a trailing comment ending in ':' is not a block header."""
+    out, rc = drive("# heads up:\n40 + 2\n")
+    assert "42\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_trailing_comment_colon_on_code_line_does_not_continue():
+    """A code line whose comment ends in ':' submits immediately (comment is stripped)."""
+    out, rc = drive("1 + 2  # sum:\n")
+    assert "3\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_hash_inside_string_is_not_a_comment():
+    """String-aware stripping: '#' inside a string literal is not a comment."""
+    out, rc = drive('print("a # b")\n')
+    assert "a # b\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_buffer_ending_in_colon_terminates_on_blank_line():
+    """A buffer whose LAST line ends in ':' still submits on the blank line — the
+    continuation decision is made once, on the first line (no loop-to-EOF)."""
+    out, rc = drive(
+        "if true:\n"
+        "    if false:\n"       # buffer now ends in ':'
+        "\n"                     # blank line must still submit (then a parse/check error is fine)
+        "40 + 2\n"               # and the session keeps going
+    )
+    assert "42\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_bracket_continuation_across_lines():
+    """A '[' opened on line 1 and closed later; blank line submits the buffer."""
+    out, rc = drive(
+        "let xs = [1,\n"
+        "2,\n"
+        "3]\n"
+        "\n"
+        "len(xs)\n"
+    )
+    assert "3\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_eof_mid_continuation_submits_and_exits():
+    """EOF while in continuation mode submits the buffer and exits 0 (never hangs)."""
+    out, rc = drive(
+        "fn one() -> Int:\n"
+        "    return 1\n"        # EOF here: block submits, session then sees EOF and exits
+    )
+    assert rc == 0
+    assert_no_traceback(out)
