@@ -290,6 +290,8 @@ class _Compiler:
     def expr(self, e: A.Expr) -> None:
         if isinstance(e, (A.IntLit, A.FloatLit, A.StrLit, A.BoolLit)):
             self.emit(Op.LOAD_CONST, self.const(e.value), e.span)
+        elif isinstance(e, A.UnitLit):
+            self.emit(Op.LOAD_CONST, self.const(None), e.span)     # unit is runtime None
         elif isinstance(e, A.Name):
             self._load(e)
         elif isinstance(e, A.Unary):
@@ -529,13 +531,13 @@ class _Compiler:
 
     def _if_expr(self, e: A.IfExpr) -> None:
         end_jumps: list[int] = []
-        for cond, value in e.branches:
+        for cond, body in e.branches:
             self.expr(cond)
             skip = self.emit_jump(Op.JUMP_IF_FALSE, cond.span)
-            self.expr(value)
+            self._arm_body_value(body)                # block-as-value: stmts + tail expr
             end_jumps.append(self.emit_jump(Op.JUMP, e.span))
             self.patch(skip, self.here())
-        self.expr(e.orelse)
+        self._arm_body_value(e.orelse)
         end = self.here()
         for j in end_jumps:
             self.patch(j, end)

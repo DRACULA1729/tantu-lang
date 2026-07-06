@@ -38,3 +38,48 @@ def test_stage_boundaries():
     rc = vm.VM(stdout=out).run(code, src, "<smoke>")
     assert rc == 0
     assert out.getvalue() == "hi\n"
+
+
+def _run(src: str) -> str:
+    """Drive src through all five stages; assert exit 0 and return stdout."""
+    module = parser.parse(lexer.tokenize(src, "<t>"))
+    code = compiler.compile_module(checker.check(module))
+    out = io.StringIO()
+    rc = vm.VM(stdout=out).run(code, src, "<t>")
+    assert rc == 0
+    return out.getvalue()
+
+
+# -- W9: unit literal () -------------------------------------------------------
+
+def test_unit_literal_end_to_end():
+    assert _run("let u = ()\nprint(u)\n") == "()\n"
+    assert _run("print(())\n") == "()\n"
+
+
+# -- W10: statement-position + block-form if-expressions ------------------------
+
+def test_statement_position_if_expr_end_to_end():
+    src = ('fn find_user(id: Int) -> Option[Str]:\n'
+           '    if id == 1: Some("ada") else: None\n'
+           'print(find_user(1))\n'
+           'print(find_user(2))\n')
+    assert _run(src) == 'Some("ada")\nNone\n'
+
+
+def test_block_form_if_expr_end_to_end():
+    src = ("let x = 3\n"
+           "let y = if x > 0:\n"
+           "    let z = x * 2\n"
+           "    z + 1\n"
+           "else:\n"
+           "    0\n"
+           "print(y)\n")
+    assert _run(src) == "7\n"
+
+
+def test_inline_if_expr_elif_end_to_end():
+    src = ('let score = 85\n'
+           'let grade = if score >= 90: "A" elif score >= 80: "B" else: "C"\n'
+           'print(grade)\n')
+    assert _run(src) == "B\n"

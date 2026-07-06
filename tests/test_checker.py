@@ -344,3 +344,79 @@ def test_module_level_inline_lambda_question_message():
     assert errs[0].code == "E0106"
     assert errs[0].message == \
         "'?' inside a lambda without a return-type annotation; add '-> T'"
+
+
+# -- W9: unit literal () -------------------------------------------------------
+
+def test_unit_literal_has_unit_type():
+    m = check_src("let u = ()\n")
+    assert m.decls[0].value.ty is UNIT
+
+
+def test_unit_literal_checks_against_unit_annotation():
+    check_src("let u: Unit = ()\n")                      # ok
+    assert errors_of("let u: Int = ()\n")[0].code == E_TYPE_MISMATCH
+
+
+# -- W10: if-expression branch typing (inline, statement-position, block-form) --
+
+def test_if_expr_branch_types_must_agree():
+    errs = errors_of('let a = true\nlet g = if a: 1 else: "x"\n')
+    assert errs[0].code == E_TYPE_MISMATCH
+    assert "if-expression branches" in errs[0].message
+
+
+def test_if_expr_condition_must_be_bool():
+    assert errors_of("let g = if 1: 2 else: 3\n")[0].code == E_NON_BOOL_COND
+
+
+def test_block_form_if_expr_infers_from_tail():
+    src = ("let x = 3\n"
+           "let y = if x > 0:\n"
+           "    let z = x * 2\n"
+           "    z + 1\n"
+           "else:\n"
+           "    0\n")
+    m = check_src(src)
+    assert m.decls[1].value.ty is INT
+
+
+def test_block_form_if_expr_branch_mismatch():
+    src = ("let x = 3\n"
+           "let y = if x > 0:\n"
+           "    let z = x * 2\n"
+           "    z + 1\n"
+           "else:\n"
+           '    "nope"\n')
+    errs = errors_of(src)
+    assert errs[0].code == E_TYPE_MISMATCH
+    assert "if-expression branches" in errs[0].message
+
+
+def test_expected_type_flows_into_if_expr_branches():
+    # §2.8's example shape: `None` in a branch is only typeable because the
+    # function's declared Option[Str] return type flows into each branch.
+    check_src('fn find_user(id: Int) -> Option[Str]:\n'
+              '    if id == 1: Some("ada") else: None\n')
+
+
+def test_expected_type_flows_into_block_form_branches():
+    check_src('fn pick(b: Bool) -> Option[Int]:\n'
+              '    if b:\n'
+              '        Some(1)\n'
+              '    else:\n'
+              '        None\n')
+
+
+def test_statement_position_if_expr_return_type_conformance():
+    errs = errors_of('fn f(x: Int) -> Str:\n'
+                     '    if x > 0: 1 else: 2\n')
+    assert errs[0].code == E_TYPE_MISMATCH
+
+
+def test_if_expr_divergent_branch_is_exempt_from_agreement():
+    # a branch ending in `return` diverges — like a match arm, it contributes no type
+    check_src('fn f(x: Int) -> Int:\n'
+              '    let y = if x > 0: x else:\n'
+              '        return 0\n'
+              '    y + 1\n')

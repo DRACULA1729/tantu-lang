@@ -222,12 +222,41 @@ class _Parser:
         value = self.expression()
         return A.Assign(Span.merge(name.span, value.span), name.lexeme, value)
 
-    def if_statement(self) -> A.If:
+    def if_statement(self) -> A.Stmt:
+        """An `if` in statement position: an if-STATEMENT, or (§2.8) an inline
+        if-EXPRESSION whose value is discarded / yielded as the block tail.
+
+        Disambiguation is LL with one committed expression — no backtracking. After
+        `if cond:` an inline branch that can only be a statement (let/var/return/
+        break/continue/spawn, or `name = ...` assignment) is a statement `if`. Any
+        other inline branch parses as ONE expression; if the very next token is a
+        same-line `elif`/`else`, that expression was the first branch of an
+        if-EXPRESSION and we commit to that form; a NEWLINE instead means it was a
+        one-statement inline block of a normal if-STATEMENT.
+        """
         kw = self.advance()  # IF
-        branches: list = []
         cond = self.expression()
         self.expect(_TT.COLON, "':'")
-        branches.append((cond, self._block()))
+        t = self.peek().type
+        stmt_head = t in (_TT.LET, _TT.VAR, _TT.RETURN, _TT.BREAK, _TT.CONTINUE, _TT.SPAWN) \
+            or (t is _TT.IDENT and self.peek2().type is _TT.EQ)
+        if t is not _TT.NEWLINE and not stmt_head:
+            e = self.expression()
+            after = self.peek().type
+            if after in (_TT.ELIF, _TT.ELSE) and self.tokens[self.pos - 1].type is not _TT.DEDENT:
+                # same-line elif/else after the branch expression → if-EXPRESSION (§2.8)
+                node = self._if_expr_tail(kw, [(cond, [A.ExprStmt(e.span, e)])])
+                if self.tokens[self.pos - 1].type is not _TT.DEDENT:
+                    self.expect(_TT.NEWLINE, "end of statement")
+                return A.ExprStmt(node.span, node)
+            # NEWLINE (or the DEDENT of a trailing block-form expr) → statement if
+            # with a one-statement inline block; same termination rule as simple_statement.
+            if self.tokens[self.pos - 1].type is not _TT.DEDENT:
+                self.expect(_TT.NEWLINE, "end of statement")
+            first_body: list[A.Stmt] = [A.ExprStmt(e.span, e)]
+        else:
+            first_body = self._block()
+        branches: list = [(cond, first_body)]
         while self.check(_TT.ELIF):
             self.advance()
             c = self.expression()
@@ -509,19 +538,28 @@ class _Parser:
 
     def _if_expr(self) -> A.Expr:
         kw = self.advance()  # IF
-        branches: list = []
         cond = self.expression()
         self.expect(_TT.COLON, "':'")
-        branches.append((cond, self.expression()))
+        return self._if_expr_tail(kw, [(cond, self._if_branch())])
+
+    def _if_expr_tail(self, kw: Token, branches: list) -> A.IfExpr:
+        """The `{elif}* else` tail of an if-expression (first branch already parsed)."""
         while self.check(_TT.ELIF):
             self.advance()
             c = self.expression()
             self.expect(_TT.COLON, "':'")
-            branches.append((c, self.expression()))
+            branches.append((c, self._if_branch()))
         self.expect(_TT.ELSE, "'else' (an if-expression must have an else)")
         self.expect(_TT.COLON, "':'")
-        orelse = self.expression()
-        return A.IfExpr(Span.merge(kw.span, orelse.span), branches, orelse)
+        orelse = self._if_branch()
+        return A.IfExpr(Span.merge(kw.span, orelse[-1].span), branches, orelse)
+
+    def _if_branch(self) -> list[A.Stmt]:
+        """One if-expression branch body: an indented block, or an inline expression (§2.6)."""
+        if self.check(_TT.NEWLINE):
+            return self._block()
+        e = self.expression()
+        return [A.ExprStmt(e.span, e)]
 
     def _or(self) -> A.Expr:
         left = self._and()
@@ -662,6 +700,9 @@ class _Parser:
             return A.ListLit(Span.merge(lb.span, rb.span), elems)
         if t is _TT.LPAREN:
             lp = self.advance()
+            if self.check(_TT.RPAREN):               # unit literal `()` (§2.11 primary)
+                rp = self.advance()
+                return A.UnitLit(Span.merge(lp.span, rp.span))
             first = self.expression()
             if self.match(_TT.COMMA):                # tuple (arity >= 2; no 1-tuples)
                 elems = [first, self.expression()]

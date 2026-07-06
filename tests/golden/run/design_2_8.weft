@@ -1,0 +1,22 @@
+# DESIGN.md §2.8 "Option, Result, and error propagation", verbatim.
+fn find_user(id: Int) -> Option[Str]:
+    if id == 1: Some("ada") else: None
+
+fn parse_num(s: Str) -> Result[Int, Str]:
+    match parse_int(s):                # Option → Result: always an explicit match
+        Some(n) => Ok(n)
+        None    => Err("not a number: " + s)
+
+fn parse_pair(s: Str) -> Result[(Int, Int), Str]:
+    let parts = split(s, ",")
+    if len(parts) != 2:
+        return Err("expected two fields: " + s)
+    let a = parse_num(parts[0])?       # on Err(e): early-returns Err(e) from parse_pair
+    let b = parse_num(parts[1])?
+    Ok((a, b))
+
+print(find_user(1))
+print(find_user(2))
+print(parse_pair("3,4"))
+print(parse_pair("3"))
+print(parse_pair("3,x"))

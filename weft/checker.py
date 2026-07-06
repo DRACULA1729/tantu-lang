@@ -435,12 +435,7 @@ class _Checker:
             expr.ty = expected                 # empty list gets its element type from context
             return
         if isinstance(expr, A.IfExpr):         # flow `expected` into each branch (inference)
-            for cond, _ in expr.branches:
-                self._condition(cond, scope)
-            for _, v in expr.branches:
-                self.check_expr(v, expected, scope)
-            self.check_expr(expr.orelse, expected, scope)
-            expr.ty = expected
+            self._if_expr(expr, scope, expected)
             return
         if isinstance(expr, A.Match):
             self._check_match(expr, scope, expected=expected, stmt_position=False)
@@ -464,6 +459,8 @@ class _Checker:
             return BOOL
         if isinstance(expr, A.StrLit):
             return STR
+        if isinstance(expr, A.UnitLit):
+            return UNIT
         if isinstance(expr, A.Name):
             return self._name(expr, scope)
         if isinstance(expr, A.Unary):
@@ -608,11 +605,21 @@ class _Checker:
                        f"'{e.op.symbol}' expects Bool operands, found {rt!r}", e.right.span)
         return BOOL
 
-    def _if_expr(self, e: A.IfExpr, scope: Scope) -> Type:
+    def _if_expr(self, e: A.IfExpr, scope: Scope, expected: Type | None = None) -> Type:
+        """An if-expression: branch bodies are blocks-as-values (§2.6) — statements
+        followed by a tail expression, checked with the match-arm machinery so
+        expected-type flow and divergent (return/break/continue) branches behave
+        exactly like match arms."""
         for cond, _ in e.branches:
             self._condition(cond, scope)
-        types = [self.synth(v, scope) for _, v in e.branches]
-        types.append(self.synth(e.orelse, scope))
+        types: list[Type] = []
+        for _, body in e.branches:
+            t = self._arm_value(body, scope.child(), False, expected)
+            if t is not None:
+                types.append(t)
+        t = self._arm_value(e.orelse, scope.child(), False, expected)
+        if t is not None:
+            types.append(t)
         result: Type | None = None
         for t in types:
             if t is ERROR:
@@ -623,8 +630,15 @@ class _Checker:
                 self.error(E_TYPE_MISMATCH,
                            f"if-expression branches must have the same type, "
                            f"found {result!r} and {t!r}", e.span)
+                e.ty = ERROR
                 return ERROR
-        return result if result is not None else ERROR
+        if result is not None:
+            e.ty = result
+        elif types:                    # every branch errored
+            e.ty = ERROR
+        else:                          # every branch diverges (return/break/continue)
+            e.ty = expected if expected is not None else UNIT
+        return e.ty
 
     def _lambda(self, e: A.Lambda, scope: Scope) -> Type:
         fn_scope = scope.child_frame("local")

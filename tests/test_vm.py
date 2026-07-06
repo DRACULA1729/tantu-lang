@@ -132,3 +132,48 @@ def test_render_deep_python_value_direct():
     for _ in range(5000):
         v = [v]
     assert render(v) == "[" * 5000 + "1" + "]" * 5000
+
+
+# -- W17: Weft call-depth cap (R010) + truncated panic trace ---------------------------------
+
+from weft.cli import compile_source
+
+_RUNAWAY = "fn f(n: Int) -> Int:\n    return f(n + 1)\n\nfn main() -> Unit:\n    print(f(0))\n"
+
+
+def test_runaway_recursion_panics_r010_with_truncated_trace():
+    out, err, code = run_capture(_RUNAWAY, "so.weft")
+    assert code == 1
+    assert err == ""
+    assert "panic [R010]" in out and "call stack overflow (100000 frames)" in out
+    assert "more frames" in out                  # the truncation marker
+    assert len(out.splitlines()) < 100           # ~20 frames rendered, not 100k
+    assert "Traceback" not in out
+
+
+def test_max_frames_is_a_ctor_param():
+    code = compile_source(_RUNAWAY, "so2.weft")
+    out = io.StringIO()
+    rc = VM(stdout=out, max_frames=50).run(code, _RUNAWAY, "so2.weft")
+    assert rc == 1
+    assert "call stack overflow (50 frames)" in out.getvalue()
+
+
+def test_deep_but_legal_recursion_still_succeeds():
+    # 50k frames sits well under the 100k default cap — deep-but-legal recursion must work.
+    src = ("fn f(n: Int) -> Int:\n    if n == 0:\n        return 0\n    return f(n - 1) + 1\n\n"
+           "fn main() -> Unit:\n    print(f(50000))\n")
+    out, err, code = run_capture(src, "deep_rec.weft")
+    assert (err, code) == ("", 0)
+    assert out == "50000\n"
+
+
+# -- W18: negative channel capacity (R011) ----------------------------------------------------
+
+
+def test_negative_channel_capacity_panics_r011():
+    out, err, code = run_capture(
+        "fn main() -> Unit:\n    let c = chan[Int](-5)\n    send(c, 1)\n", "nc.weft")
+    assert code == 1
+    assert err == ""
+    assert "panic [R011]" in out and "channel capacity cannot be negative (-5)" in out

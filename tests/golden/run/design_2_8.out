@@ -1,0 +1,5 @@
+Some("ada")
+None
+Ok((3, 4))
+Err("expected two fields: 3")
+Err("not a number: x")
