@@ -12,11 +12,16 @@ inline simple statement after ':' or a NEWLINE + INDENT … DEDENT suite.
 
 from __future__ import annotations
 
-from weft.errors import Span, ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF
+from weft.errors import Span, ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
 from weft.tokens import Token, TokenType
 from weft import ast_nodes as A
 
 _TT = TokenType
+
+# Maximum nesting depth for expressions, patterns, and types. The checker and
+# compiler use ~3-5 Python stack frames per AST level, so 100 keeps every later
+# phase comfortably under CPython's default recursion limit.
+_MAX_DEPTH = 100
 
 _ADD_OPS = {_TT.PLUS: A.BinOpKind.ADD, _TT.MINUS: A.BinOpKind.SUB}
 _MUL_OPS = {_TT.STAR: A.BinOpKind.MUL, _TT.SLASH: A.BinOpKind.DIV, _TT.PERCENT: A.BinOpKind.MOD}
@@ -30,6 +35,7 @@ class _Parser:
     def __init__(self, tokens: list[Token]) -> None:
         self.tokens = tokens
         self.pos = 0
+        self.depth = 0
 
     # -- token cursor --------------------------------------------------------
 
@@ -61,6 +67,17 @@ class _Parser:
         if self.check(tt):
             return self.advance()
         self._unexpected(self.peek(), what)
+
+    def _deeper(self) -> None:
+        """Bump the nesting depth; raise P_TOO_DEEP past _MAX_DEPTH.
+
+        Every recursive entry point (expression, _not, _unary, _pattern, _type)
+        calls this on entry and decrements self.depth in a finally block, so the
+        count stays correct even when a ParseError propagates.
+        """
+        self.depth += 1
+        if self.depth > _MAX_DEPTH:
+            raise ParseError(P_TOO_DEEP, "expression nesting too deep", self.peek().span)
 
     def _unexpected(self, tok: Token, expected: str) -> None:
         if tok.type is _TT.EOF:
@@ -313,15 +330,19 @@ class _Parser:
     # -- expressions ---------------------------------------------------------
 
     def expression(self) -> A.Expr:
-        if self.check(_TT.IF):
-            return self._if_expr()
-        if self.check(_TT.FN):
-            return self._lambda()
-        if self.check(_TT.MATCH):
-            return self._match()
-        if self.check(_TT.SELECT):
-            return self._select()
-        return self._or()
+        self._deeper()
+        try:
+            if self.check(_TT.IF):
+                return self._if_expr()
+            if self.check(_TT.FN):
+                return self._lambda()
+            if self.check(_TT.MATCH):
+                return self._match()
+            if self.check(_TT.SELECT):
+                return self._select()
+            return self._or()
+        finally:
+            self.depth -= 1
 
     # -- enums, match, patterns ----------------------------------------------
 
@@ -439,48 +460,52 @@ class _Parser:
         return A.SelectArm(Span.merge(start, rp.span), "send", None, ch, val, self._arm_tail())
 
     def _pattern(self) -> A.Pattern:
-        tok = self.peek()
-        t = tok.type
-        if t is _TT.MINUS or t is _TT.INT:
-            neg = self.match(_TT.MINUS)
-            num = self.expect(_TT.INT, "an integer literal pattern")
-            v = -num.value if neg else num.value
-            return A.PLiteral(Span.merge(tok.span, num.span), v, "int")
-        if t is _TT.STR:
-            self.advance()
-            return A.PLiteral(tok.span, tok.value, "str")
-        if t is _TT.TRUE:
-            self.advance()
-            return A.PLiteral(tok.span, True, "bool")
-        if t is _TT.FALSE:
-            self.advance()
-            return A.PLiteral(tok.span, False, "bool")
-        if t is _TT.FLOAT:
-            self._unexpected(tok, "a pattern (Float literal patterns are not allowed — "
-                                  "match a Float with a binding and comparisons)")
-        if t is _TT.IDENT:
-            name = self.advance()
-            if name.lexeme == "_":
-                return A.PWildcard(name.span)
-            if self.match(_TT.LPAREN):
-                args = [self._pattern()]
-                while self.match(_TT.COMMA):
-                    args.append(self._pattern())
-                rp = self.expect(_TT.RPAREN, "')'")
-                return A.PVariant(Span.merge(name.span, rp.span), name.lexeme, args)
-            return A.PIdent(name.span, name.lexeme)
-        if t is _TT.LPAREN:
-            lp = self.advance()
-            first = self._pattern()
-            if self.match(_TT.COMMA):
-                elems = [first, self._pattern()]
-                while self.match(_TT.COMMA):
-                    elems.append(self._pattern())
-                rp = self.expect(_TT.RPAREN, "')'")
-                return A.PTuple(Span.merge(lp.span, rp.span), elems)
-            self.expect(_TT.RPAREN, "')'")
-            return first  # grouped pattern
-        self._unexpected(tok, "a pattern")
+        self._deeper()
+        try:
+            tok = self.peek()
+            t = tok.type
+            if t is _TT.MINUS or t is _TT.INT:
+                neg = self.match(_TT.MINUS)
+                num = self.expect(_TT.INT, "an integer literal pattern")
+                v = -num.value if neg else num.value
+                return A.PLiteral(Span.merge(tok.span, num.span), v, "int")
+            if t is _TT.STR:
+                self.advance()
+                return A.PLiteral(tok.span, tok.value, "str")
+            if t is _TT.TRUE:
+                self.advance()
+                return A.PLiteral(tok.span, True, "bool")
+            if t is _TT.FALSE:
+                self.advance()
+                return A.PLiteral(tok.span, False, "bool")
+            if t is _TT.FLOAT:
+                self._unexpected(tok, "a pattern (Float literal patterns are not allowed — "
+                                      "match a Float with a binding and comparisons)")
+            if t is _TT.IDENT:
+                name = self.advance()
+                if name.lexeme == "_":
+                    return A.PWildcard(name.span)
+                if self.match(_TT.LPAREN):
+                    args = [self._pattern()]
+                    while self.match(_TT.COMMA):
+                        args.append(self._pattern())
+                    rp = self.expect(_TT.RPAREN, "')'")
+                    return A.PVariant(Span.merge(name.span, rp.span), name.lexeme, args)
+                return A.PIdent(name.span, name.lexeme)
+            if t is _TT.LPAREN:
+                lp = self.advance()
+                first = self._pattern()
+                if self.match(_TT.COMMA):
+                    elems = [first, self._pattern()]
+                    while self.match(_TT.COMMA):
+                        elems.append(self._pattern())
+                    rp = self.expect(_TT.RPAREN, "')'")
+                    return A.PTuple(Span.merge(lp.span, rp.span), elems)
+                self.expect(_TT.RPAREN, "')'")
+                return first  # grouped pattern
+            self._unexpected(tok, "a pattern")
+        finally:
+            self.depth -= 1
 
     def _if_expr(self) -> A.Expr:
         kw = self.advance()  # IF
@@ -515,11 +540,15 @@ class _Parser:
         return left
 
     def _not(self) -> A.Expr:
-        if self.check(_TT.NOT):
-            tok = self.advance()
-            operand = self._not()
-            return A.Unary(Span.merge(tok.span, operand.span), A.UnOpKind.NOT, operand)
-        return self._cmp()
+        self._deeper()
+        try:
+            if self.check(_TT.NOT):
+                tok = self.advance()
+                operand = self._not()
+                return A.Unary(Span.merge(tok.span, operand.span), A.UnOpKind.NOT, operand)
+            return self._cmp()
+        finally:
+            self.depth -= 1
 
     def _cmp(self) -> A.Expr:
         left = self._add()
@@ -550,11 +579,15 @@ class _Parser:
         return left
 
     def _unary(self) -> A.Expr:
-        if self.check(_TT.MINUS):
-            optok = self.advance()
-            operand = self._unary()
-            return A.Unary(Span.merge(optok.span, operand.span), A.UnOpKind.NEG, operand)
-        return self._postfix()
+        self._deeper()
+        try:
+            if self.check(_TT.MINUS):
+                optok = self.advance()
+                operand = self._unary()
+                return A.Unary(Span.merge(optok.span, operand.span), A.UnOpKind.NEG, operand)
+            return self._postfix()
+        finally:
+            self.depth -= 1
 
     def _postfix(self) -> A.Expr:
         expr = self._primary()
@@ -647,16 +680,20 @@ class _Parser:
     def _type(self) -> A.TypeExpr:
         # §2.11 `type`: function type `(T, ...) -> R`, or IDENT with optional [args].
         # Tuple types `(T, T)` arrive in M5.
-        if self.check(_TT.LPAREN):
-            return self._fn_type()
-        name = self.expect(_TT.IDENT, "a type name")
-        if self.match(_TT.LBRACKET):
-            args = [self._type()]
-            while self.match(_TT.COMMA):
-                args.append(self._type())
-            rb = self.expect(_TT.RBRACKET, "']'")
-            return A.NamedType(Span.merge(name.span, rb.span), name.lexeme, args)
-        return A.NamedType(name.span, name.lexeme, [])
+        self._deeper()
+        try:
+            if self.check(_TT.LPAREN):
+                return self._fn_type()
+            name = self.expect(_TT.IDENT, "a type name")
+            if self.match(_TT.LBRACKET):
+                args = [self._type()]
+                while self.match(_TT.COMMA):
+                    args.append(self._type())
+                rb = self.expect(_TT.RBRACKET, "']'")
+                return A.NamedType(Span.merge(name.span, rb.span), name.lexeme, args)
+            return A.NamedType(name.span, name.lexeme, [])
+        finally:
+            self.depth -= 1
 
     def _fn_type(self) -> A.TypeExpr:
         lp = self.advance()  # LPAREN

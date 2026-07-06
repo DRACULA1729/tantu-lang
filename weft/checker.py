@@ -34,6 +34,10 @@ from weft.errors import (
     E_SELECT_ELSE, E_GENERIC_NOT_VALUE,
 )
 
+# Return-frame sentinel for an unannotated inline lambda: its return type is inferred from the
+# body expression, so `?`/`return` have no frame type to check against and must be rejected.
+_INFER = object()
+
 _PRIMS = {"Int": INT, "Float": FLOAT, "Bool": BOOL, "Str": STR, "Unit": UNIT}
 _ARITH = {A.BinOpKind.ADD, A.BinOpKind.SUB, A.BinOpKind.MUL, A.BinOpKind.DIV, A.BinOpKind.MOD}
 _EQUALITY = {A.BinOpKind.EQ, A.BinOpKind.NE}
@@ -54,7 +58,9 @@ class _Checker:
     def __init__(self) -> None:
         self.errors: list[CheckError] = []
         self.loop_depth = 0
-        self.ret_stack: list[Type] = []   # enclosing function return types; empty = module level
+        # enclosing function return types (or _INFER for an unannotated inline lambda);
+        # empty = module level
+        self.ret_stack: list = []
         self.main_slot: int | None = None
         self.enums: dict[str, EnumDef] = prelude_enums()
         self.enum_names: set[str] = set()                     # user enum names (for forward refs)
@@ -381,6 +387,13 @@ class _Checker:
                 self.synth(s.value, scope)
             return
         R = self.ret_stack[-1]
+        if R is _INFER:
+            self.error(E_QUESTION,
+                       "'return' inside a lambda without a return-type annotation; add '-> T'",
+                       s.span)
+            if s.value is not None:
+                self.synth(s.value, scope)
+            return
         if s.value is not None:
             self.check_expr(s.value, R, scope)
         elif R is not ERROR and R != UNIT:
@@ -626,7 +639,12 @@ class _Checker:
             self._check_fn_body(e.body, fn_scope, ret, e.span)
             self.ret_stack.pop()
         elif len(e.body) == 1 and isinstance(e.body[0], A.ExprStmt):
-            ret = self.synth(e.body[0].expr, fn_scope)   # inline body: infer from the expression
+            # inline body: infer from the expression. `_INFER` marks the return frame so
+            # `?`/`return` inside it are rejected (the inferred type is not known yet — letting
+            # them through would leak an error value as the success payload).
+            self.ret_stack.append(_INFER)
+            ret = self.synth(e.body[0].expr, fn_scope)
+            self.ret_stack.pop()
         else:
             self.error(E_UNSUPPORTED,
                        "a lambda with a block body needs a return-type annotation ('-> T')", e.span)
@@ -849,6 +867,13 @@ class _Checker:
                      stmt_position: bool) -> Type:
         m.stmt_position = stmt_position
         S = self.synth(m.scrutinee, scope)
+        if isinstance(S, EnumT) and S.name not in self.enums:
+            # an enum type imported from another module: its definition (variants/tags) is not
+            # in this checker's registry — cross-module enum match is deferred post-v1 (§7 M8)
+            self.error(E_UNSUPPORTED,
+                       f"cannot match on foreign enum type '{S.name}' "
+                       f"(cross-module enums are not supported in v1)", m.scrutinee.span)
+            S = ERROR
         m.scrut_slot = self._temp(scope)
         rows: list = []
         arm_types: list[Type] = []
@@ -1152,6 +1177,10 @@ class _Checker:
             return ERROR
         if not self.ret_stack:
             self.error(E_QUESTION, "'?' is only valid inside a function", e.span)
+            return ERROR
+        if self.ret_stack[-1] is _INFER:
+            self.error(E_QUESTION,
+                       "'?' inside a lambda without a return-type annotation; add '-> T'", e.span)
             return ERROR
         R = self.ret_stack[-1]
         if isinstance(t, EnumT) and t.name == "Result":

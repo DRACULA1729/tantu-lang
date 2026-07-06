@@ -1,0 +1,4 @@
+panic [R009]: trunc: cannot truncate inf to Int
+  in <module> at trunc_inf.weft:1:7
+  print(trunc(1.0e300 * 1.0e300))
+        ^^^^^^^^^^^^^^^^^^^^^^^^

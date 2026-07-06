@@ -1,0 +1,4 @@
+panic [R009]: trunc: cannot truncate nan to Int
+  in <module> at trunc_nan.weft:1:7
+  print(trunc(0.0 * (1.0e300 * 1.0e300)))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

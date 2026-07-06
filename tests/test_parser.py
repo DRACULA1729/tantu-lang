@@ -6,7 +6,7 @@ import pytest
 
 from weft.lexer import tokenize
 from weft.parser import parse
-from weft.errors import ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF
+from weft.errors import ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
 
 
 def pretty(src: str) -> str:
@@ -101,3 +101,46 @@ def test_logical_and_not_precedence():
 def test_comparison_is_non_associative():
     with pytest.raises(ParseError):
         parse(tokenize("a < b < c\n", "<t>"))
+
+
+# -- W4: nesting-depth guard (P_TOO_DEEP) -------------------------------------
+
+def test_deep_paren_nesting_raises_p_too_deep():
+    src = "(" * 200 + "1" + ")" * 200
+    with pytest.raises(ParseError) as e:
+        parse(tokenize(src, "<t>"))
+    assert e.value.code == P_TOO_DEEP
+
+
+def test_deep_not_nesting_raises_p_too_deep():
+    src = "not " * 400 + "true"
+    with pytest.raises(ParseError) as e:
+        parse(tokenize(src, "<t>"))
+    assert e.value.code == P_TOO_DEEP
+
+
+def test_deep_bracket_nesting_raises_p_too_deep():
+    src = "[" * 100
+    with pytest.raises(ParseError) as e:
+        parse(tokenize(src, "<t>"))
+    assert e.value.code == P_TOO_DEEP
+
+
+def test_deep_unary_minus_nesting_raises_p_too_deep():
+    src = "-" * 400 + "1"
+    with pytest.raises(ParseError) as e:
+        parse(tokenize(src, "<t>"))
+    assert e.value.code == P_TOO_DEEP
+
+
+def test_deep_type_nesting_raises_p_too_deep():
+    src = "let x: " + "List[" * 200 + "Int" + "]" * 200 + " = y\n"
+    with pytest.raises(ParseError) as e:
+        parse(tokenize(src, "<t>"))
+    assert e.value.code == P_TOO_DEEP
+
+
+def test_moderate_nesting_still_parses():
+    # Well below the cap: legitimate nesting must not be rejected.
+    src = "(" * 20 + "1" + ")" * 20 + "\n"
+    parse(tokenize(src, "<t>"))  # must not raise

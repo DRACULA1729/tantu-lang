@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 
+import weft.repl
 from weft.repl import repl
 
 
@@ -11,6 +12,11 @@ def drive(text: str) -> tuple[str, int]:
     out = io.StringIO()
     rc = repl(io.StringIO(text), out)
     return out.getvalue(), rc
+
+
+def assert_no_traceback(out: str) -> None:
+    """Shared W1 invariant: no raw Python traceback may ever reach the user."""
+    assert "Traceback" not in out, f"raw Python traceback leaked:\n{out}"
 
 
 def test_bare_expression_is_echoed():
@@ -54,3 +60,48 @@ def test_panic_does_not_end_the_session():
 def test_eof_exits_zero():
     _, rc = drive("")
     assert rc == 0
+
+
+def test_internal_error_does_not_end_the_session(monkeypatch):
+    """An unexpected (non-Weft) exception during evaluation degrades to a one-line
+    internal-error message and the session keeps going (W1 catch-all boundary)."""
+    orig = weft.repl._Session.run_input
+
+    def exploding_run_input(self, src):
+        if "boom" in src:
+            raise RuntimeError("synthetic evaluator bug")
+        return orig(self, src)
+
+    monkeypatch.setattr(weft.repl._Session, "run_input", exploding_run_input)
+    out, rc = drive("boom\n1 + 1\n")
+    assert "internal error" in out
+    assert "synthetic evaluator bug" in out
+    assert "2\n" in out          # a following valid line still evaluates
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_keyboard_interrupt_does_not_end_the_session(monkeypatch):
+    """Ctrl-C during evaluation prints KeyboardInterrupt and returns to the prompt."""
+    orig = weft.repl._Session.run_input
+
+    def interrupted_run_input(self, src):
+        if "boom" in src:
+            raise KeyboardInterrupt
+        return orig(self, src)
+
+    monkeypatch.setattr(weft.repl._Session, "run_input", interrupted_run_input)
+    out, rc = drive("boom\n40 + 2\n")
+    assert "KeyboardInterrupt" in out
+    assert "42\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
+def test_deep_nesting_does_not_end_the_session():
+    """W4: a too-deep expression is diagnosed (P003) and the REPL keeps going."""
+    out, rc = drive("not " * 400 + "true\n40 + 2\n")
+    assert "P003" in out
+    assert "42\n" in out
+    assert rc == 0
+    assert_no_traceback(out)

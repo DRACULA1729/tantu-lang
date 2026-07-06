@@ -307,3 +307,40 @@ def test_bidirectional_if_infers_variant():
 def test_bidirectional_match_arm_infers_variant():
     check_src('fn f(o: Option[Int]) -> Result[Int, Str]:\n'
               '    match o:\n        Some(n) => Ok(n)\n        None => Err("none")\n')
+
+
+# -- W2: '?' / 'return' inside an unannotated inline lambda -------------------
+
+def test_question_in_unannotated_inline_lambda_is_error():
+    # soundness repro: previously checked clean and let the Err escape as the payload
+    src = ('fn get() -> Result[Int, Str]:\n    Err("boom")\n'
+           'fn outer() -> Result[Int, Str]:\n'
+           '    let f = fn(): get()?\n    let x = f()\n    Ok(x)\n')
+    errs = errors_of(src)
+    assert errs[0].code == "E0106"
+    assert "return-type annotation" in errs[0].message
+
+
+def test_question_in_annotated_inline_lambda_ok():
+    check_src('fn get() -> Result[Int, Str]:\n    Err("boom")\n'
+              'fn outer() -> Result[Int, Str]:\n'
+              '    let f = fn() -> Result[Int, Str]: Ok(get()?)\n    f()\n')
+
+
+def test_return_in_match_inside_unannotated_inline_lambda_is_error():
+    src = ('let f = fn(b: Bool): match b:\n'
+           '    true => return 1\n'
+           '    false => 2\n')
+    errs = errors_of(src)
+    assert errs[0].code == "E0106"
+    assert "'return' inside a lambda" in errs[0].message
+
+
+def test_module_level_inline_lambda_question_message():
+    # previously misreported as "'?' is only valid inside a function"
+    src = ('fn get() -> Result[Int, Str]:\n    Err("boom")\n'
+           'let f = fn(): get()?\n')
+    errs = errors_of(src)
+    assert errs[0].code == "E0106"
+    assert errs[0].message == \
+        "'?' inside a lambda without a return-type annotation; add '-> T'"

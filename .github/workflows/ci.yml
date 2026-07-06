@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package (with dev deps)
+        run: pip install -e .[dev]
+
+      - name: Run test suite
+        run: pytest
+
+      - name: Check and run all examples
+        run: |
+          set -u
+          fail=0
+          count=0
+          for f in examples/*.weft; do
+            count=$((count + 1))
+            echo "=== weft check $f ==="
+            if ! weft check "$f"; then
+              echo "FAIL: weft check $f exited non-zero"
+              fail=1
+            fi
+            echo "=== weft run $f ==="
+            if ! weft run "$f"; then
+              echo "FAIL: weft run $f exited non-zero"
+              fail=1
+            fi
+          done
+          echo "Ran $count examples"
+          if [ "$count" -eq 0 ]; then
+            echo "FAIL: no examples found"
+            fail=1
+          fi
+          exit "$fail"

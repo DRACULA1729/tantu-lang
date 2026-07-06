@@ -31,6 +31,14 @@ _USAGE = ("usage: weft [run|check|dis] <file|-> \n"
           "       weft --version")
 
 
+def _internal_error(err, exc) -> int:
+    """Last-resort boundary (§6.2): any unexpected exception becomes a one-line
+    diagnostic and exit 2 — a raw Python traceback must never reach the user."""
+    err.write(f"weft: internal error: {type(exc).__name__}: {exc}\n"
+              "  this is a bug in weft — please report it\n")
+    return 2
+
+
 def front(src: str, file: str) -> A.Module:
     """Lex + parse + check. Raises WeftError / CheckErrors on failure."""
     return check(parse(tokenize(src, file)))
@@ -133,6 +141,9 @@ def build_program(root_path: str, err) -> tuple[Code, dict] | None:
         src = srcs.get(e.span.file, "") if e.span else ""
         err.write(render_error(src, e) + "\n")
         return None
+    except UnicodeDecodeError as e:
+        err.write(f"weft: {root_path}: source is not valid UTF-8 ({e})\n")
+        return None
     except OSError as e:
         err.write(f"weft: cannot read {root_path}: {e.strerror}\n")
         return None
@@ -160,11 +171,14 @@ def dis_file(path: str, out, err) -> int:
 
 
 def _read_target(target: str, err) -> tuple[str, str] | None:
-    if target == "-":
-        return sys.stdin.read(), "<stdin>"
     try:
+        if target == "-":
+            return sys.stdin.read(), "<stdin>"
         with open(target, "r", encoding="utf-8") as f:
             return f.read(), target
+    except UnicodeDecodeError as e:
+        err.write(f"weft: {target}: source is not valid UTF-8 ({e})\n")
+        return None
     except OSError as e:
         err.write(f"weft: cannot read {target}: {e.strerror}\n")
         return None
@@ -194,16 +208,24 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     target = argv[1]
 
-    if target != "-":                       # a source file: multi-module (discover + link)
-        if cmd == "run":
-            return run_file(target, sys.stdout, sys.stderr)
-        if cmd == "check":
-            return check_file(target, sys.stderr)
-        return dis_file(target, sys.stdout, sys.stderr)
+    try:
+        if target != "-":                   # a source file: multi-module (discover + link)
+            if cmd == "run":
+                return run_file(target, sys.stdout, sys.stderr)
+            if cmd == "check":
+                return check_file(target, sys.stderr)
+            return dis_file(target, sys.stdout, sys.stderr)
 
-    src = sys.stdin.read()                  # stdin: single module (import is a compile error)
-    if cmd == "run":
-        return run_text(src, "<stdin>", sys.stdout, sys.stderr)
-    if cmd == "check":
-        return check_text(src, "<stdin>", sys.stderr)
-    return dis_text(src, "<stdin>", sys.stdout, sys.stderr)
+        read = _read_target("-", sys.stderr)  # stdin: single module (import is a compile error)
+        if read is None:
+            return 2
+        src, label = read
+        if cmd == "run":
+            return run_text(src, label, sys.stdout, sys.stderr)
+        if cmd == "check":
+            return check_text(src, label, sys.stderr)
+        return dis_text(src, label, sys.stdout, sys.stderr)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:                # catch-all boundary: no raw tracebacks (W1)
+        return _internal_error(sys.stderr, exc)

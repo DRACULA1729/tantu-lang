@@ -66,25 +66,33 @@ def repl(stdin, stdout) -> int:
     stdout.write(f"weft {__version__} REPL — Ctrl-D to exit\n")
     session = _Session(stdout)
     while True:
-        stdout.write(">>> ")
-        stdout.flush()
-        line = stdin.readline()
-        if line == "":  # EOF
-            stdout.write("\n")
-            return 0
-        buf = line
-        while _needs_continuation(buf):
-            stdout.write("... ")
-            stdout.flush()
-            cont = stdin.readline()
-            if cont == "":
-                break
-            buf += cont
-        if buf.strip() == "":
-            continue
         try:
-            session.run_input(buf)
-        except CheckErrors as e:
-            stdout.write(render_errors(buf, e.errors) + "\n")
-        except WeftError as e:
-            stdout.write(render_error(buf, e) + "\n")
+            stdout.write(">>> ")
+            stdout.flush()
+            line = stdin.readline()
+            if line == "":  # EOF
+                stdout.write("\n")
+                return 0
+            buf = line
+            while _needs_continuation(buf):
+                stdout.write("... ")
+                stdout.flush()
+                cont = stdin.readline()
+                if cont == "":
+                    break
+                buf += cont
+            if buf.strip() == "":
+                continue
+            try:
+                session.run_input(buf)
+            except CheckErrors as e:
+                stdout.write(render_errors(buf, e.errors) + "\n")
+            except WeftError as e:
+                stdout.write(render_error(buf, e) + "\n")
+        except KeyboardInterrupt:           # Ctrl-C: abandon the current line, keep the session
+            stdout.write("\nKeyboardInterrupt\n")
+            continue
+        except Exception as e:              # catch-all boundary: the session must never die (W1)
+            stdout.write(f"weft: internal error: {type(e).__name__}: {e}\n"
+                         "  this is a bug in weft — please report it\n")
+            continue

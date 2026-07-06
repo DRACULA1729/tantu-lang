@@ -1,9 +1,26 @@
 [project]
 name = "weft"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Weft — a statically-typed, Python-readable language with fibers + channels, compiled to bytecode and run on a hand-built stack VM."
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "DRACULA1729"}]
 requires-python = ">=3.12"
 dependencies = []  # zero third-party runtime dependencies — deliberate (see DESIGN.md)
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/DRACULA1729/weft-lang"
+Repository = "https://github.com/DRACULA1729/weft-lang"
+
+[project.scripts]
+weft = "weft.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest==8.3.4"]
@@ -14,6 +31,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["weft"]
+
+[tool.setuptools.dynamic]
+version = {attr = "weft.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

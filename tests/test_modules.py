@@ -20,7 +20,7 @@ from weft.cli import build_program
 from weft.errors import (
     CheckErrors, WeftError,
     E_IMPORT_UNSUPPORTED, E_MODULE_NOT_FOUND, E_NOT_A_MODULE_MEMBER,
-    E_MODULE_NOT_VALUE, E_IMPORT_CYCLE,
+    E_MODULE_NOT_VALUE, E_IMPORT_CYCLE, E_UNSUPPORTED,
 )
 
 
@@ -115,3 +115,41 @@ def test_build_program_detects_cycle(tmp_path):
     err = io.StringIO()
     assert build_program(str(tmp_path / "a.weft"), err) is None
     assert E_IMPORT_CYCLE in err.getvalue()
+
+
+# ------------------------------------------- W3: match on a foreign enum (M8)
+
+def _colorlib_symbols() -> dict:
+    dep = _check("enum Color:\n    Red\n    Green\nlet c = Red\n")
+    return dep.symbols
+
+
+def test_match_on_foreign_enum_with_wildcard_is_rejected_cleanly():
+    # cross-module enums are deferred post-v1: reject with E0001, never a raw KeyError
+    syms = _colorlib_symbols()
+    src = ("import colorlib\nfn main() -> Unit:\n"
+           "    match colorlib.c:\n        _ => print(1)\n")
+    with pytest.raises(CheckErrors) as e:
+        _check(src, imports={"colorlib": syms})
+    errs = e.value.errors
+    assert errs[0].code == E_UNSUPPORTED
+    assert "foreign enum type 'Color'" in errs[0].message
+
+
+def test_match_on_foreign_enum_without_wildcard_is_rejected_cleanly():
+    syms = _colorlib_symbols()
+    src = ("import colorlib\nfn main() -> Unit:\n"
+           "    match colorlib.c:\n        Red => print(1)\n")
+    assert E_UNSUPPORTED in _errors(src, imports={"colorlib": syms})
+
+
+def test_match_on_foreign_enum_end_to_end_exit_2(tmp_path):
+    from harness import run_program
+    _write(tmp_path, "colorlib.weft", "enum Color:\n    Red\n    Green\nlet c = Red\n")
+    main = _write(tmp_path, "main.weft",
+                  "import colorlib\nfn main() -> Unit:\n"
+                  "    match colorlib.c:\n        _ => print(1)\n")
+    out, err, code = run_program(main)
+    assert code == 2
+    assert out == ""
+    assert E_UNSUPPORTED in err and "foreign enum" in err

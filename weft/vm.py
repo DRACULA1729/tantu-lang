@@ -21,7 +21,7 @@ from weft.bytecode import Op, Code
 from weft.errors import (
     Span, WeftPanic, render_panic, render_span,
     R_DIV_BY_ZERO, R_UNINIT, R_MATCH_FAIL, R_INDEX_OUT_OF_RANGE,
-    R_SEND_CLOSED, R_CLOSE_CLOSED, R_DEADLOCK, R_STEP_LIMIT,
+    R_SEND_CLOSED, R_CLOSE_CLOSED, R_DEADLOCK, R_STEP_LIMIT, R_BUILTIN,
 )
 from weft.values import render, Closure, Builtin, Variant, Record, Channel
 from weft.prelude import builtin_impls
@@ -326,7 +326,16 @@ class VM:
                 elif isinstance(callee, Builtin):
                     args = stack[base + 1:]
                     del stack[base:]
-                    stack.append(self.builtins[callee.name](*args))
+                    # Panic boundary: a host exception inside a builtin becomes a clean
+                    # R009 panic at the call site instead of a raw Python traceback.
+                    try:
+                        result = self.builtins[callee.name](*args)
+                    except WeftPanic:
+                        raise
+                    except Exception as ex:
+                        raise WeftPanic(R_BUILTIN, f"{callee.name}: {ex}",
+                                        frame.code.spans[frame.ip - 1])
+                    stack.append(result)
                 else:
                     raise VMError(f"cannot call {type(callee).__name__}")
             elif op is Op.RETURN:

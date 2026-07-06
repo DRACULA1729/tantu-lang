@@ -1,0 +1,3 @@
+lambda_question.weft:5:19: check error [E0106]: '?' inside a lambda without a return-type annotation; add '-> T'
+      let f = fn(): get()?
+                    ^^^^^^

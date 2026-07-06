@@ -62,31 +62,68 @@ def _escape(s: str) -> str:
     return "".join(_STR_ESCAPES.get(ch, ch) for ch in s)
 
 
+def _push_children(work: list, children, suffix: str) -> None:
+    """Schedule `children` (comma-separated, nested) followed by `suffix` on the work stack.
+
+    The stack pops LIFO, so items are pushed in reverse emission order: suffix first, then
+    child_{n-1} .. child_0 with a ", " literal between each pair.
+    """
+    work.append(suffix)
+    for i in range(len(children) - 1, -1, -1):
+        work.append((children[i], True))
+        if i:
+            work.append(", ")
+
+
 def render(v: object, nested: bool = False) -> str:
-    """Render a Weft value to its display string (Appendix B)."""
-    # bool must precede int (bool is a subclass of int in Python)
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if v is None:
-        return "()"
-    if isinstance(v, int):
-        return str(v)
-    if isinstance(v, float):
-        return repr(v)
-    if isinstance(v, str):
-        return f'"{_escape(v)}"' if nested else v
-    if isinstance(v, list):
-        return "[" + ", ".join(render(x, nested=True) for x in v) + "]"
-    if isinstance(v, tuple):
-        return "(" + ", ".join(render(x, nested=True) for x in v) + ")"
-    if isinstance(v, Variant):
-        if v.fields:
-            return f"{v.variant_name}(" + ", ".join(render(x, nested=True) for x in v.fields) + ")"
-        return v.variant_name
-    if isinstance(v, Record):
-        return f"{v.struct_name}(" + ", ".join(render(x, nested=True) for x in v.fields) + ")"
-    if isinstance(v, (Closure, Builtin)):
-        return f"<fn {getattr(v, 'name', getattr(getattr(v, 'code', None), 'name', '?'))}>"
-    if isinstance(v, Channel):
-        return "<chan>"
-    return str(v)  # unreachable for well-typed programs
+    """Render a Weft value to its display string (Appendix B).
+
+    Iterative (explicit work stack) so deeply nested values — a 5000-deep cons list, say —
+    render without hitting Python's recursion limit. Output is byte-identical to the original
+    recursive form; the golden suite is the guardrail.
+
+    Work-stack items are either a bare `str` (a literal token to emit) or a `(value, nested)`
+    pair. Value pairs are always 2-tuples built here, so a Weft tuple value (itself a Python
+    tuple) can never be mistaken for a literal — literals are checked by exact `str` type.
+    """
+    out: list[str] = []
+    work: list = [(v, nested)]
+    while work:
+        item = work.pop()
+        if type(item) is str:       # a pre-rendered literal token (separator/suffix)
+            out.append(item)
+            continue
+        v, nested = item
+        # bool must precede int (bool is a subclass of int in Python)
+        if isinstance(v, bool):
+            out.append("true" if v else "false")
+        elif v is None:
+            out.append("()")
+        elif isinstance(v, int):
+            out.append(str(v))
+        elif isinstance(v, float):
+            out.append(repr(v))
+        elif isinstance(v, str):
+            out.append(f'"{_escape(v)}"' if nested else v)
+        elif isinstance(v, list):
+            out.append("[")
+            _push_children(work, v, "]")
+        elif isinstance(v, tuple):
+            out.append("(")
+            _push_children(work, v, ")")
+        elif isinstance(v, Variant):
+            if v.fields:
+                out.append(f"{v.variant_name}(")
+                _push_children(work, v.fields, ")")
+            else:
+                out.append(v.variant_name)
+        elif isinstance(v, Record):
+            out.append(f"{v.struct_name}(")
+            _push_children(work, v.fields, ")")
+        elif isinstance(v, (Closure, Builtin)):
+            out.append(f"<fn {getattr(v, 'name', getattr(getattr(v, 'code', None), 'name', '?'))}>")
+        elif isinstance(v, Channel):
+            out.append("<chan>")
+        else:
+            out.append(str(v))      # unreachable for well-typed programs
+    return "".join(out)
