@@ -1075,15 +1075,15 @@ rendered error and every golden `.err` file includes its code. Complete shipped 
 | P002 | unexpected-eof | parse | unexpected end of input, expected {what} |
 | P003 | nesting-too-deep | parse | expression/type/pattern nesting too deep (recursion cap on every recursive entry point) |
 | E0001 | unsupported | check | construct not available in this build/v1: bad `spawn` targets ("cannot spawn '{name}'; spawn a user-defined function or lambda"), generic `main`, unannotated block-bodied lambdas, `print` arity, match on a foreign (cross-module) enum |
-| E0101 | duplicate-definition | check | duplicate definition of '{name}' (values, types, variants-vs-values, type parameters) |
+| E0101 | duplicate-definition | check | duplicate definition of '{name}' / duplicate field '{name}' / '{name}' conflicts with an existing type or imported module (values, types, fields, variants-vs-values, type parameters) |
 | E0102 | assign-immutable | check | cannot assign to immutable binding '{name}' |
-| E0103 | var-capture | check | cannot capture/access mutable binding '{name}' from an enclosing scope; copy it into a 'let' first |
+| E0103 | var-capture | check | cannot capture/access mutable binding '{name}' from an enclosing scope; copy it into a 'let' first / cannot access mutable binding '{mod}.{name}' from another module |
 | E0104 | non-bool-condition | check | condition must be Bool |
 | E0105 | non-exhaustive-match | check | match on '{type}' is not exhaustive; missing: {witness} |
 | E0106 | question-mark-mismatch | check | '?' misuse: Option/Result vs the function's return type, '?' on a non-Result/Option, '?' outside a function / in an unannotated lambda |
 | E0107 | cannot-infer-empty-list | check | cannot infer element type of []; add an annotation |
 | E0108 | missing-return-path | check | missing return path — function must return {R} on all paths |
-| E0109 | intrinsic-not-value | check | intrinsic '{name}' is not a first-class value / cannot rebind intrinsic '{name}' |
+| E0109 | intrinsic-not-value | check | intrinsic '{name}' is not a first-class value / cannot rebind prelude name '{name}' |
 | E0111 | unknown-name | check | unknown name '{name}' |
 | E0112 | type-mismatch | check | expected {T}, found {U} (the general operator/argument/branch/arm mismatch, incl. select head "expects a channel") |
 | E0113 | not-comparable | check | '{op}' is not defined for {T} (ordering beyond Int/Float/Str; `==` beyond primitives) |

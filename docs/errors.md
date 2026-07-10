@@ -29,7 +29,7 @@ two ever disagree.
 | Code | Message | What it means / typical fix |
 |---|---|---|
 | E0001 | construct not available in this build / v1 | Something the language doesn't support: a bad `spawn` target, a generic `main`, an unannotated block-bodied lambda, wrong `print` arity, or `match` on a foreign (cross-module) enum. |
-| E0101 | duplicate definition | A name (value, type, variant, or type parameter) is declared twice in the same scope. |
+| E0101 | duplicate definition | A name (value, type, field, variant, or type parameter) is declared twice in the same scope, or collides with an existing type or imported module. |
 | E0102 | cannot assign to immutable binding | The target is a `let`. Declare it `var` if it needs to change. |
 | E0103 | cannot capture/access mutable binding from an enclosing scope | A function or another module read a `var`. Copy it into a `let` first. Keeps fibers from sharing mutable state. |
 | E0104 | condition must be Bool | The test in an `if`/`while`/etc. isn't `Bool`. |
@@ -37,7 +37,7 @@ two ever disagree.
 | E0106 | `?` misuse | `?` used on a non-`Option`/`Result`, against the wrong return type, outside a function, or inside an unannotated lambda. |
 | E0107 | cannot infer element type of `[]` | Annotate the empty list, e.g. `let xs: List[Int] = []`. |
 | E0108 | missing return path | A function with a declared return type can fall off the end without returning. |
-| E0109 | intrinsic is not a first-class value | A builtin/intrinsic used as a value, or an attempt to rebind one. Call it, or wrap it in a lambda. |
+| E0109 | intrinsic is not a first-class value | A builtin/intrinsic used as a value, or an attempt to rebind a prelude name (`Some`, `None`, `Ok`, `Err`, `print`, ...). Call it, or wrap it in a lambda. |
 | E0111 | unknown name | The name isn't in scope. Check spelling and imports. |
 | E0112 | type mismatch (expected ..., found ...) | The general operator/argument/branch/arm mismatch, including a `select` head that isn't a channel. |
 | E0113 | operator not defined for this type | Ordering beyond `Int`/`Float`/`Str`, or `==`/`!=` beyond primitives. |
