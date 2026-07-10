@@ -304,7 +304,11 @@ def test_keyboard_interrupt_boundary_returns_130(monkeypatch):
     """Ctrl-C during a command hits the dispatch boundary: exit 130, clean message."""
     import weft.cli as climod
     monkeypatch.setattr(climod, "run_text", _raiser(KeyboardInterrupt))
-    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1)\n")
+    original = signal.getsignal(signal.SIGINT)   # main()'s handler sets SIG_IGN in THIS process;
+    try:                                         # restore after so later subprocess children (which
+        rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1)\n")  # inherit the
+    finally:                                     # disposition) still see SIGINT, not an inherited SIG_IGN
+        signal.signal(signal.SIGINT, original)
     assert rc == 130
     assert "interrupted" in err
     assert "Traceback" not in err
@@ -419,6 +423,91 @@ def test_broken_pipe_large_output_exits_141_silently(tmp_path):
     assert rc == 141, err
     for bad in ("Traceback", "Exception ignored", "internal error"):
         assert bad not in err, err
+
+
+# --- broken-pipe boundary completeness (D19): --version, stderr pipe, SIGINT+pipe ------
+
+
+def _run_argv_closed_stdout(argv):
+    """Spawn `weft <argv>` and close stdout's read end at once, like a consumer that quit.
+    Drains stderr to EOF before waiting. Returns (returncode, stderr_text)."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "weft", *argv],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    try:
+        proc.stdout.close()                 # the consumer went away
+        err = proc.stderr.read()
+        proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    return proc.returncode, err.decode("utf-8", "replace")
+
+
+def test_version_broken_stdout_pipe_exits_141_silently():
+    """F1: `weft --version | closed-pipe`. The tiny version line is flushed inside main()'s
+    boundary, so the broken pipe is a silent exit 141 — never a shutdown-time leak/exit 120."""
+    rc, err = _run_argv_closed_stdout(["--version"])
+    assert rc == 141, err
+    for bad in ("Traceback", "Exception ignored", "internal error"):
+        assert bad not in err, err
+
+
+def test_check_error_broken_stderr_pipe_exits_141_silently(tmp_path):
+    """F3: a compile error's diagnostic goes to stderr; if THAT pipe's read end is closed
+    (`weft check bad.weft 2>&1 | head -0`), the flush must be a silent 141, not an exit-120 leak."""
+    prog = tmp_path / "bad.weft"
+    prog.write_text("let x = undefined_name\n")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "weft", "check", str(prog)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    try:
+        proc.stderr.close()                 # the diagnostic consumer went away
+        out = proc.stdout.read()
+        proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    combined = out.decode("utf-8", "replace")
+    assert proc.returncode == 141, combined
+    for bad in ("Traceback", "Exception ignored", "internal error"):
+        assert bad not in combined, combined
+
+
+def test_sigint_with_broken_stdout_pipe_exits_130(tmp_path):
+    """F4: Ctrl-C while stdout is a broken pipe. The interrupt wins (exit 130), and the
+    KeyboardInterrupt handler silences the still-buffered stdout so its flush can't leak an
+    'Exception ignored' at shutdown (the bug that turned this into exit 120). The program
+    prints its marker once (buffered, never flushed) then spins silently, so no VM print
+    ever hits the broken pipe first — keeping the exit deterministically 130, not 141."""
+    prog = tmp_path / "loop.weft"
+    prog.write_text(_LOOP_PROG)
+    proc = subprocess.Popen(     # NOT -u: 'running\n' stays pending in the child's stdout buffer
+        [sys.executable, "-m", "weft", "run", str(prog)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    try:
+        proc.stdout.close()                 # break the pipe before any output is drained
+        time.sleep(0.5)                     # let the child reach its silent loop
+        assert proc.poll() is None, "child exited before the interrupt"
+        proc.send_signal(signal.SIGINT)
+        _, err = proc.communicate(timeout=10)
+        combined = err.decode("utf-8", "replace")
+        assert proc.returncode == 130, combined
+        assert "interrupted" in combined
+        for bad in ("Traceback", "Exception ignored", "internal error"):
+            assert bad not in combined, combined
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 
 # --- CRLF/CR stdin is normalized to LF (DECISIONS.md D17) ------------------------------

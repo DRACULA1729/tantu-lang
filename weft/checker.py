@@ -1108,6 +1108,7 @@ class _Checker:
             if not isinstance(ty, EnumT) or pat.name not in self.variant_index \
                     or self.variant_index[pat.name][0] != ty.name:
                 self.error(E_NOT_A_VARIANT, f"'{pat.name}' is not a variant of {ty!r}", pat.span)
+                self._bind_error_binders(pat, scope)        # bind sub-binders so the body is quiet
                 return exhaustive.WILD
             enum_name, tag = self.variant_index[pat.name]
             edef = self.enums[enum_name]
@@ -1131,6 +1132,7 @@ class _Checker:
         if isinstance(pat, A.PTuple):
             if not isinstance(ty, TupleT) or len(ty.items) != len(pat.elems):
                 self.error(E_TYPE_MISMATCH, f"tuple pattern does not match {ty!r}", pat.span)
+                self._bind_error_binders(pat, scope)        # bind sub-binders so the body is quiet
                 return exhaustive.WILD
             subs = []
             field_slots = []

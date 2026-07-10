@@ -872,7 +872,7 @@ AST nodes: mutable dataclasses, every node has `span: Span`; expressions add
 same format, from Milestone 1 onward. Process exit codes: **0** success, **1** panic,
 **2** compile-time error (lex/parse/check), **130** interrupted (Ctrl-C during
 `run`/`check`/`dis`; the REPL instead prints `KeyboardInterrupt` and continues),
-**141** broken stdout pipe — output consumer went away (e.g. `weft run x | head`; 128 + SIGPIPE, silent). Rendered errors print paths relative to the CWD
+**141** broken output pipe (stdout or stderr) — the consumer went away (e.g. `weft run x | head`; 128 + SIGPIPE, silent). Rendered errors print paths relative to the CWD
 so golden `.err` files are machine-independent.
 
 ### 6.3 Data-flow invariants (enforced by tests)

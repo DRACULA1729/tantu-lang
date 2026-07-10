@@ -40,6 +40,17 @@ def _internal_error(err, exc) -> int:
     return 2
 
 
+def _silence(stream) -> None:
+    """Redirect a stream's fd to /dev/null so a later flush cannot re-raise on a broken
+    pipe. Guarded: StringIO.fileno() raises UnsupportedOperation (an OSError subclass) for
+    the in-process golden runner — swallow it so tests stay unaffected."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, stream.fileno())
+    except OSError:
+        pass
+
+
 def front(src: str, file: str) -> A.Module:
     """Lex + parse + check. Raises WeftError / CheckErrors on failure."""
     return check(parse(tokenize(src, file)))
@@ -202,24 +213,28 @@ def main(argv: list[str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    if not argv:
-        from weft.repl import repl
-        return repl(sys.stdin, sys.stdout)
-
-    if argv[0] in ("--version", "-V"):
-        sys.stdout.write(f"weft {__version__}\n")
-        return 0
-
-    cmd = argv[0]
-    if cmd not in ("run", "check", "dis"):
-        sys.stderr.write(f"weft: unknown command {cmd!r}\n{_USAGE}\n")
-        return 2
-    if len(argv) < 2:
-        sys.stderr.write(f"weft {cmd}: missing file argument (use '-' for stdin)\n")
-        return 2
-    target = argv[1]
-
     try:
+        if not argv:                        # REPL: its own loop handles pipes/Ctrl-C; the flush
+            from weft.repl import repl       # below routes any still-buffered output through this
+            rc = repl(sys.stdin, sys.stdout)  # boundary so a broken pipe can't leak at shutdown
+            sys.stdout.flush()
+            sys.stderr.flush()
+            return rc
+
+        if argv[0] in ("--version", "-V"):
+            sys.stdout.write(f"weft {__version__}\n")
+            sys.stdout.flush()   # flush inside the boundary so a broken pipe surfaces here, not at shutdown
+            return 0
+
+        cmd = argv[0]
+        if cmd not in ("run", "check", "dis"):
+            sys.stderr.write(f"weft: unknown command {cmd!r}\n{_USAGE}\n")
+            return 2
+        if len(argv) < 2:
+            sys.stderr.write(f"weft {cmd}: missing file argument (use '-' for stdin)\n")
+            return 2
+        target = argv[1]
+
         if target != "-":                   # a source file: multi-module (discover + link)
             if cmd == "run":
                 rc = run_file(target, sys.stdout, sys.stderr)
@@ -239,21 +254,27 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 rc = dis_text(src, label, sys.stdout, sys.stderr)
         sys.stdout.flush()   # surface a pending broken pipe HERE (inside the boundary), not at
-        return rc            # interpreter shutdown where it leaks as "Exception ignored ..."
+        sys.stderr.flush()   # interpreter shutdown where it leaks as "Exception ignored ..."
+        return rc
     except SystemExit:
         raise
     except KeyboardInterrupt:               # Ctrl-C during a command: clean exit, no traceback
         signal.signal(signal.SIGINT, signal.SIG_IGN)   # a 2nd Ctrl-C during teardown must not crash
-        sys.stderr.write("\nweft: interrupted\n")
-        return 130
-    except BrokenPipeError:                 # the stdout consumer went away (e.g. `weft run x | head`):
-        # a normal end-of-output, not a weft bug. Redirect stdout to /dev/null so the shutdown
-        # flush cannot raise again, write nothing, and exit 141 (128 + SIGPIPE) per the shell convention.
         try:
-            devnull = os.open(os.devnull, os.O_WRONLY)
-            os.dup2(devnull, sys.stdout.fileno())
-        except OSError:
+            sys.stderr.write("\nweft: interrupted\n")
+        except (BrokenPipeError, OSError):  # stderr may itself be a broken pipe
             pass
+        for stream in (sys.stdout, sys.stderr):   # a broken-pipe interrupt still exits 130, not 141
+            try:
+                stream.flush()
+            except (BrokenPipeError, OSError):
+                _silence(stream)
+        return 130
+    except BrokenPipeError:                 # an output consumer went away (e.g. `weft run x | head`):
+        # a normal end-of-output, not a weft bug. Redirect BOTH streams to /dev/null so the shutdown
+        # flush cannot raise again, write nothing, and exit 141 (128 + SIGPIPE) per the shell convention.
+        _silence(sys.stdout)
+        _silence(sys.stderr)
         return 141
     except Exception as exc:                # catch-all boundary: no raw tracebacks (W1)
         return _internal_error(sys.stderr, exc)

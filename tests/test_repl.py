@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import io
+import os
+import subprocess
+import sys
 
 import weft.repl
 from weft.repl import repl
@@ -237,3 +240,28 @@ def test_eof_mid_continuation_submits_and_exits():
     )
     assert rc == 0
     assert_no_traceback(out)
+
+
+def test_repl_broken_stdout_pipe_exits_not_hang():
+    """F2 (anti-hang): with the REPL's stdout read end closed, the prompt flush raises
+    BrokenPipeError. The loop must EXIT (rc 141), not busy-loop forever writing internal-error
+    lines. A real subprocess is used so a regression genuinely hangs (caught by the timeout)."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "weft"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    try:
+        proc.stdout.close()                 # the REPL's output consumer went away
+        proc.stdin.write(b"1 + 1\n")        # feed one input, then EOF
+        proc.stdin.flush()
+        proc.stdin.close()
+        rc = proc.wait(timeout=10)          # MUST terminate; a hang fails here
+        err = proc.stderr.read().decode("utf-8", "replace")
+        assert rc == 141, err
+        for bad in ("Traceback", "Exception ignored", "internal error"):
+            assert bad not in err, err
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()

@@ -138,6 +138,8 @@ def repl(stdin, stdout) -> int:
         except KeyboardInterrupt:           # Ctrl-C: abandon the current line, keep the session
             stdout.write("\nKeyboardInterrupt\n")
             continue
+        except BrokenPipeError:             # stdout consumer went away: exit the loop, don't busy-spin
+            return 141
         except Exception as e:              # catch-all boundary: the session must never die (W1)
             stdout.write(f"weft: internal error: {type(e).__name__}: {e}\n"
                          "  this is a bug in weft — please report it\n")

@@ -13,7 +13,7 @@ from weft.errors import (
     CheckErrors, E_UNKNOWN_NAME, E_ASSIGN_IMMUTABLE, E_NON_BOOL_COND,
     E_TYPE_MISMATCH, E_LOOP_CONTROL, E_DUPLICATE, E_UNKNOWN_TYPE,
     E_CANNOT_INFER, E_UNREACHABLE, E_NON_EXHAUSTIVE, E_INTRINSIC_NOT_VALUE,
-    E_VARIANT_ARITY,
+    E_VARIANT_ARITY, E_NOT_A_VARIANT,
 )
 
 
@@ -536,3 +536,25 @@ def test_correct_arity_variant_pattern_still_checks():
         "    match x:\n"
         "        Some(a) => a\n"
         "        None => 0\n")
+
+
+def test_not_a_variant_pattern_binds_binders_no_cascade():
+    # Bogus is not a variant of Int: only E0121 must surface — the arm body's use of `x`
+    # must NOT cascade into E0111 (binders bound with type ERROR). (round-4 Fix 2)
+    errs = errors_of(
+        "fn f(n: Int) -> Int:\n"
+        "    match n:\n"
+        "        Bogus(x) => x\n"
+        "        _ => 0\n")
+    assert [e.code for e in errs] == [E_NOT_A_VARIANT]
+
+
+def test_tuple_pattern_mismatch_binds_binders_no_cascade():
+    # a tuple pattern against a non-tuple scrutinee: only E0112 must surface — the arm body's
+    # use of `a` must NOT cascade into E0111 (binders bound with type ERROR). (round-4 Fix 2)
+    errs = errors_of(
+        "fn f(n: Int) -> Int:\n"
+        "    match n:\n"
+        "        (a, b) => a\n"
+        "        _ => 0\n")
+    assert [e.code for e in errs] == [E_TYPE_MISMATCH]
