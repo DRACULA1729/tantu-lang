@@ -220,6 +220,22 @@ def test_moderate_nesting_still_parses():
     parse(tokenize(src, "<t>"))  # must not raise
 
 
+def test_long_flat_operator_chain_raises_p_too_deep():
+    # A flat chain parses iteratively (no nesting), so it bypasses _MAX_DEPTH; the
+    # per-chain operand cap catches it instead. 10_001 operands = 10_000 '+' operators.
+    src = "let x = " + "1+" * 10_000 + "1\n"
+    with pytest.raises(ParseError) as e:
+        parse(tokenize(src, "<t>"))
+    assert e.value.code == P_TOO_DEEP
+    assert "too long" in e.value.message
+
+
+def test_long_flat_chain_at_cap_still_parses():
+    # 10_000 operands (9_999 operators) is exactly at the cap and must parse.
+    src = "let x = " + "1+" * 9_999 + "1\n"
+    parse(tokenize(src, "<t>"))  # must not raise
+
+
 def test_unexpected_indent_message_is_grammatical():
     # Fix 4: layout name for INDENT is "indentation", not "an indented block".
     with pytest.raises(ParseError) as e:

@@ -124,6 +124,21 @@ def test_multiline_fn_body_then_call():
     assert_no_traceback(out)
 
 
+def test_crlf_multiline_fn_body():
+    """A CRLF-line-ended script piped to the REPL (each line normalized to LF) works the
+    same as an LF one — the continuation and lexer never see a stray '\\r'."""
+    out, rc = drive(
+        "fn add3(a: Int, b: Int, c: Int) -> Int:\r\n"
+        "    let s = a + b\r\n"
+        "    return s + c\r\n"
+        "\r\n"                    # blank (CRLF) line submits the block
+        "add3(1, 2, 3)\r\n"
+    )
+    assert "6\n" in out
+    assert rc == 0
+    assert_no_traceback(out)
+
+
 def test_multiline_match_expression():
     """A multi-arm match entered across lines evaluates."""
     out, rc = drive(

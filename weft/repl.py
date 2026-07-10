@@ -115,6 +115,7 @@ def repl(stdin, stdout) -> int:
                 return 0
             if line.startswith("﻿"):   # strip a pasted leading BOM
                 line = line[1:]
+            line = line.replace("\r\n", "\n").replace("\r", "\n")   # CRLF/CR → LF (piped scripts)
             buf = line
             # §6.4: the continuation decision is made ONCE, on the first line. In
             # continuation mode a blank line (or EOF) submits the whole buffer.
@@ -125,7 +126,7 @@ def repl(stdin, stdout) -> int:
                     cont = stdin.readline()
                     if cont == "" or cont.strip() == "":
                         break
-                    buf += cont
+                    buf += cont.replace("\r\n", "\n").replace("\r", "\n")   # CRLF/CR → LF
             if buf.strip() == "":
                 continue
             try:

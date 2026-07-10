@@ -23,6 +23,13 @@ _TT = TokenType
 # phase comfortably under CPython's default recursion limit.
 _MAX_DEPTH = 100
 
+# Maximum operands in a single flat operator chain (`a + b + c + ...`). These parse
+# iteratively (no parser recursion), but build a left-nested BinOp list the checker and
+# compiler later walk recursively; cap the chain so a pathologically long one is a clean
+# P003 rather than a RecursionError. cli.main() raises the recursion limit so this cap
+# sits well inside the guaranteed-safe region (see DECISIONS.md).
+_MAX_CHAIN = 10_000
+
 # Layout tokens carry no lexeme; name them plainly in diagnostics (W20).
 _LAYOUT_NAMES = {
     _TT.NEWLINE: "end of line",
@@ -574,7 +581,11 @@ class _Parser:
 
     def _or(self) -> A.Expr:
         left = self._and()
+        n = 1
         while self.check(_TT.OR):
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             self.advance()
             right = self._and()
             left = A.Logical(Span.merge(left.span, right.span), A.LogicalKind.OR, left, right)
@@ -582,7 +593,11 @@ class _Parser:
 
     def _and(self) -> A.Expr:
         left = self._not()
+        n = 1
         while self.check(_TT.AND):
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             self.advance()
             right = self._not()
             left = A.Logical(Span.merge(left.span, right.span), A.LogicalKind.AND, left, right)
@@ -613,7 +628,11 @@ class _Parser:
 
     def _add(self) -> A.Expr:
         left = self._mul()
+        n = 1
         while self.peek().type in _ADD_OPS:
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             op = _ADD_OPS[self.advance().type]
             right = self._mul()
             left = A.BinOp(Span.merge(left.span, right.span), op, left, right)
@@ -621,7 +640,11 @@ class _Parser:
 
     def _mul(self) -> A.Expr:
         left = self._unary()
+        n = 1
         while self.peek().type in _MUL_OPS:
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             op = _MUL_OPS[self.advance().type]
             right = self._unary()
             left = A.BinOp(Span.merge(left.span, right.span), op, left, right)

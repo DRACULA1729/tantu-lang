@@ -119,13 +119,18 @@ def test_sigint_during_run_exits_130_without_traceback(tmp_path):
     prog = tmp_path / "loop.weft"
     prog.write_text(_LOOP_PROG)
     proc = _spawn_looping_weft(prog)
-    _wait_for_marker(proc)              # loop is running and the handler is installed
-    proc.send_signal(signal.SIGINT)
-    out, err = proc.communicate(timeout=10)
-    combined = (out + err).decode("utf-8", "replace")
-    assert proc.returncode == 130, combined
-    assert "Traceback" not in combined
-    assert "interrupted" in err.decode("utf-8", "replace")
+    try:
+        _wait_for_marker(proc)          # loop is running and the handler is installed
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=10)
+        combined = (out + err).decode("utf-8", "replace")
+        assert proc.returncode == 130, combined
+        assert "Traceback" not in combined
+        assert "interrupted" in err.decode("utf-8", "replace")
+    finally:
+        if proc.poll() is None:         # failure path: don't leave the loop spinning forever
+            proc.kill()
+            proc.wait()
 
 
 def test_double_sigint_during_run_exits_130_without_traceback(tmp_path):
@@ -134,14 +139,19 @@ def test_double_sigint_during_run_exits_130_without_traceback(tmp_path):
     prog = tmp_path / "loop.weft"
     prog.write_text(_LOOP_PROG)
     proc = _spawn_looping_weft(prog)
-    _wait_for_marker(proc)
-    proc.send_signal(signal.SIGINT)
-    time.sleep(0.01)                    # 10ms later: land the 2nd during teardown
-    proc.send_signal(signal.SIGINT)
-    out, err = proc.communicate(timeout=10)
-    combined = (out + err).decode("utf-8", "replace")
-    assert proc.returncode == 130, combined
-    assert "Traceback" not in combined
+    try:
+        _wait_for_marker(proc)
+        proc.send_signal(signal.SIGINT)
+        time.sleep(0.01)                # 10ms later: land the 2nd during teardown
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=10)
+        combined = (out + err).decode("utf-8", "replace")
+        assert proc.returncode == 130, combined
+        assert "Traceback" not in combined
+    finally:
+        if proc.poll() is None:         # failure path: don't leave the loop spinning forever
+            proc.kill()
+            proc.wait()
 
 
 # --- in-process tests: drive main(argv) directly (W21) --------------------------------
@@ -354,6 +364,97 @@ def test_read_target_latin1_file(tmp_path):
     err = io.StringIO()
     assert _read_target(str(bad), err) is None
     assert "not valid UTF-8" in err.getvalue()
+
+
+# --- broken stdout pipe: silent exit 141, no traceback (DECISIONS.md D16) -------------
+
+
+def _run_with_closed_stdout(prog_path):
+    """Spawn `weft run <file>` with a piped stdout whose read end we close at once, so the
+    child's output has nowhere to go — the shell equivalent of `weft run x | head` where the
+    consumer quit early. Returns (returncode, stderr_text). stderr is drained to EOF (child
+    exit) before waiting so a hung child can't deadlock the read."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "weft", "run", str(prog_path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    try:
+        proc.stdout.close()                 # the consumer went away
+        err = proc.stderr.read()
+        proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    return proc.returncode, err.decode("utf-8", "replace")
+
+
+def test_broken_pipe_small_output_exits_141_silently(tmp_path):
+    """Small, buffered output: the broken pipe surfaces at main()'s explicit stdout flush.
+    It must be a silent exit 141, never the shutdown-time 'Exception ignored ... BrokenPipeError'."""
+    prog = tmp_path / "hi.weft"
+    prog.write_text('print("hello")\n')
+    rc, err = _run_with_closed_stdout(prog)
+    assert rc == 141, err
+    for bad in ("Traceback", "Exception ignored", "internal error"):
+        assert bad not in err, err
+
+
+def test_broken_pipe_large_output_exits_141_silently(tmp_path):
+    """A program that prints far more than the OS pipe buffer (>64KB): the broken pipe is
+    raised mid-stream inside a VM print — the path that used to be miscaught as an
+    'internal error' exit 2. It must exit 141 with a clean stderr."""
+    prog = tmp_path / "big.weft"
+    prog.write_text(
+        "fn main():\n"
+        "    var i = 0\n"
+        "    while i < 200000:\n"
+        "        print(i)\n"
+        "        i = i + 1\n"
+        "\n"
+        "main()\n"
+    )
+    rc, err = _run_with_closed_stdout(prog)
+    assert rc == 141, err
+    for bad in ("Traceback", "Exception ignored", "internal error"):
+        assert bad not in err, err
+
+
+# --- CRLF/CR stdin is normalized to LF (DECISIONS.md D17) ------------------------------
+
+
+def test_crlf_stdin_runs(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="let x = 1\r\nprint(x + 2)\r\n")
+    assert rc == 0, err
+    assert "3" in out
+
+
+def test_cr_only_stdin_runs(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="let x = 1\rprint(x + 4)\r")
+    assert rc == 0, err
+    assert "5" in out
+
+
+# --- flat operator chain cap: a clean P003, never a RecursionError (DECISIONS.md D18) --
+
+
+def test_long_flat_chain_from_stdin_is_p003_not_internal_error(monkeypatch):
+    src = "let x = " + "1+" * 10_000 + "1\n"     # 10_001 operands, over the 10_000 cap
+    rc, out, err = call_main(monkeypatch, ["check", "-"], stdin_text=src)
+    assert rc == 2
+    assert "P003" in err
+    assert "expression too long" in err
+    assert "internal error" not in err
+    assert "Traceback" not in err
+
+
+def test_long_flat_chain_within_cap_runs(monkeypatch):
+    src = "print(" + "+".join(["1"] * 2000) + ")\n"
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text=src)
+    assert rc == 0, err
+    assert out.strip() == "2000"
+    assert "internal error" not in err
 
 
 def _raiser(exc):

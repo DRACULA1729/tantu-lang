@@ -177,6 +177,7 @@ def _read_target(target: str, err) -> tuple[str, str] | None:
             src = sys.stdin.read()
             if src.startswith("﻿"):    # strip a leading BOM (files use utf-8-sig)
                 src = src[1:]
+            src = src.replace("\r\n", "\n").replace("\r", "\n")  # universal newlines, matching open()
             return src, "<stdin>"
         with open(target, "r", encoding="utf-8-sig") as f:   # -sig: drop a leading BOM
             return f.read(), target
@@ -192,6 +193,12 @@ def main(argv: list[str] | None = None) -> int:
     if sys.version_info < (3, 12):
         sys.stderr.write("weft requires Python 3.12 or newer\n")
         return 2
+
+    # Deep-but-bounded recursive AST walks (a long flat operator chain nests into a
+    # left-deep BinOp list the checker/compiler recurse over) can exceed CPython's
+    # default ~1000-frame limit; 3.12's heap-allocated frames make a high limit cheap.
+    # The parser caps a single chain (_MAX_CHAIN) well inside this so it never triggers.
+    sys.setrecursionlimit(100_000)
 
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -215,25 +222,38 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if target != "-":                   # a source file: multi-module (discover + link)
             if cmd == "run":
-                return run_file(target, sys.stdout, sys.stderr)
-            if cmd == "check":
-                return check_file(target, sys.stderr)
-            return dis_file(target, sys.stdout, sys.stderr)
-
-        read = _read_target("-", sys.stderr)  # stdin: single module (import is a compile error)
-        if read is None:
-            return 2
-        src, label = read
-        if cmd == "run":
-            return run_text(src, label, sys.stdout, sys.stderr)
-        if cmd == "check":
-            return check_text(src, label, sys.stderr)
-        return dis_text(src, label, sys.stdout, sys.stderr)
+                rc = run_file(target, sys.stdout, sys.stderr)
+            elif cmd == "check":
+                rc = check_file(target, sys.stderr)
+            else:
+                rc = dis_file(target, sys.stdout, sys.stderr)
+        else:
+            read = _read_target("-", sys.stderr)  # stdin: single module (import is a compile error)
+            if read is None:
+                return 2
+            src, label = read
+            if cmd == "run":
+                rc = run_text(src, label, sys.stdout, sys.stderr)
+            elif cmd == "check":
+                rc = check_text(src, label, sys.stderr)
+            else:
+                rc = dis_text(src, label, sys.stdout, sys.stderr)
+        sys.stdout.flush()   # surface a pending broken pipe HERE (inside the boundary), not at
+        return rc            # interpreter shutdown where it leaks as "Exception ignored ..."
     except SystemExit:
         raise
     except KeyboardInterrupt:               # Ctrl-C during a command: clean exit, no traceback
         signal.signal(signal.SIGINT, signal.SIG_IGN)   # a 2nd Ctrl-C during teardown must not crash
         sys.stderr.write("\nweft: interrupted\n")
         return 130
+    except BrokenPipeError:                 # the stdout consumer went away (e.g. `weft run x | head`):
+        # a normal end-of-output, not a weft bug. Redirect stdout to /dev/null so the shutdown
+        # flush cannot raise again, write nothing, and exit 141 (128 + SIGPIPE) per the shell convention.
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+        except OSError:
+            pass
+        return 141
     except Exception as exc:                # catch-all boundary: no raw tracebacks (W1)
         return _internal_error(sys.stderr, exc)

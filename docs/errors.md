@@ -22,7 +22,7 @@ two ever disagree.
 |---|---|---|
 | P001 | unexpected token, expected ... | The parser found a token it can't use here. The message says what it wanted. |
 | P002 | unexpected end of input, expected ... | The program ended mid-construct, e.g. an unclosed bracket or a missing body. |
-| P003 | expression/type/pattern nesting too deep | Nesting exceeded the recursion cap. Almost always malformed or generated input. |
+| P003 | expression/type/pattern nesting too deep; or expression too long | Nesting exceeded the recursion cap, or a single flat operator chain exceeded 10,000 operands. Almost always malformed or generated input. |
 
 ## E — checker
 
@@ -73,8 +73,8 @@ two ever disagree.
 | R007 | non-exhaustive match | The `MATCH_FAIL` safety net; should be unreachable given the E0105 check. |
 | R008 | execution step limit reached | Only when the VM is run with a `step_limit` (e.g. an untrusted playground). |
 | R009 | builtin domain error | A builtin's host exception, caught at the call site (e.g. `split(s, "")`, `trunc(NaN)`). |
-| R010 | call-stack depth cap exceeded | Recursion ran past the VM's frame cap — usually unbounded recursion. |
-| R011 | negative channel capacity | `chan[T](n)` with `n < 0`. |
+| R010 | call stack overflow ({cap} frames) | Recursion ran past the VM's frame cap — usually unbounded recursion. |
+| R011 | channel capacity cannot be negative ({cap}) | `chan[T](n)` with `n < 0`. |
 
 Retired: **E0110** was listed in the v1.1 seed table but never minted (spawn-of-builtin ships
 as E0001); the number stays retired. E0125–E0129 are unassigned gaps for future check codes.

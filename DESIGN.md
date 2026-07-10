@@ -871,7 +871,8 @@ AST nodes: mutable dataclasses, every node has `span: Span`; expressions add
 (`errors.render_error`) that prints the offending source line with a caret — every stage,
 same format, from Milestone 1 onward. Process exit codes: **0** success, **1** panic,
 **2** compile-time error (lex/parse/check), **130** interrupted (Ctrl-C during
-`run`/`check`/`dis`; the REPL instead prints `KeyboardInterrupt` and continues). Rendered errors print paths relative to the CWD
+`run`/`check`/`dis`; the REPL instead prints `KeyboardInterrupt` and continues),
+**141** broken stdout pipe — output consumer went away (e.g. `weft run x | head`; 128 + SIGPIPE, silent). Rendered errors print paths relative to the CWD
 so golden `.err` files are machine-independent.
 
 ### 6.3 Data-flow invariants (enforced by tests)
@@ -1080,7 +1081,7 @@ rendered error and every golden `.err` file includes its code. Complete shipped 
 | L006 | invalid-number | lex | invalid numeric literal (malformed, e.g. a misplaced underscore) |
 | P001 | unexpected-token | parse | unexpected `{tok}`, expected {what} |
 | P002 | unexpected-eof | parse | unexpected end of input, expected {what} |
-| P003 | nesting-too-deep | parse | expression/type/pattern nesting too deep (recursion cap on every recursive entry point) |
+| P003 | nesting-too-deep | parse | expression/type/pattern nesting too deep (recursion cap on every recursive entry point), or expression too long (flat operator chains are capped at 10_000 operands) |
 | E0001 | unsupported | check | construct not available in this build/v1: bad `spawn` targets ("cannot spawn '{name}'; spawn a user-defined function or lambda"), generic `main`, unannotated block-bodied lambdas, `print` arity, match on a foreign (cross-module) enum |
 | E0101 | duplicate-definition | check | duplicate definition of '{name}' / duplicate field '{name}' / '{name}' conflicts with an existing type or imported module (values, types, fields, variants-vs-values, type parameters) |
 | E0102 | assign-immutable | check | cannot assign to immutable binding '{name}' |

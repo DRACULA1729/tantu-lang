@@ -221,5 +221,5 @@ R_UNINIT = "R006"
 R_MATCH_FAIL = "R007"
 R_STEP_LIMIT = "R008"
 R_BUILTIN = "R009"              # builtin domain error (wrapped host exception)
-R_STACK_OVERFLOW = "R010"      # Weft call-stack depth cap exceeded
-R_BAD_CAP = "R011"             # negative channel capacity
+R_STACK_OVERFLOW = "R010"      # call stack overflow ({cap} frames)
+R_BAD_CAP = "R011"             # channel capacity cannot be negative ({cap})
