@@ -1,0 +1,7 @@
+panic [R011]: channel capacity cannot be negative (-5)
+  in main at negative_cap.weft:2:13
+      let c = chan[Int](-5)
+              ^^^^^^^^^^^^^
+  in <module> at negative_cap.weft:1:1
+  fn main() -> Unit:
+  ^^^^^^^

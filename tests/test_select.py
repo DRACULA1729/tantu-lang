@@ -231,3 +231,48 @@ def test_timeout_idiom_timeout_wins():
            "    spawn timeout(t)\n    select:\n"
            "        v = recv(d) => print(v)\n        done = recv(t) => print(\"timeout\")\n")
     assert _run(src) == "timeout\n"
+
+
+# ------------------------------------------------- W15: waiter dequeue-on-wake (leak fix)
+
+import io
+
+from weft.cli import compile_source
+from weft.vm import VM
+from weft.values import Channel
+from harness import _VirtualClock
+
+
+def test_server_loop_nonfiring_channel_waiters_stay_bounded():
+    # The server-loop repro: 200 selects over {data, shutdown} where shutdown never fires.
+    # Each iteration parks the select (the feeder sleeps first, so `data` is never ready at
+    # poll time), registering a waiter on BOTH channels; when the data arm wins, the sibling
+    # waiter on `shutdown` must be dequeued eagerly — not left to accumulate as a tombstone.
+    src = ("let data = chan[Int]()\n"
+           "let shutdown = chan[Int]()\n\n"
+           "fn feeder(n: Int) -> Unit:\n"
+           "    var i = 0\n"
+           "    while i < n:\n"
+           "        sleep(1)\n"
+           "        send(data, i)\n"
+           "        i = i + 1\n\n"
+           "fn main() -> Unit:\n"
+           "    spawn feeder(200)\n"
+           "    var got = 0\n"
+           "    while got < 200:\n"
+           "        select:\n"
+           "            v = recv(data) => got = got + 1\n"
+           "            s = recv(shutdown) => got = 200\n"
+           "    print(got)\n")
+    code = compile_source(src, "leak.weft")
+    out = io.StringIO()
+    clk = _VirtualClock()
+    vm = VM(stdout=out, clock=clk.now, sleep_fn=clk.sleep)
+    rc = vm.run(code, src, "leak.weft")
+    assert rc == 0
+    assert out.getvalue() == "200\n"
+    chans = [g for g in vm.globals if isinstance(g, Channel)]
+    assert len(chans) == 2
+    for c in chans:                        # white-box: no unbounded tombstone accumulation
+        assert len(c.recv_wait) <= 1
+        assert len(c.send_wait) <= 1

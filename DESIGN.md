@@ -1,9 +1,13 @@
-# Weft — Language & Toolchain Design (v1.1)
+# Weft — Language & Toolchain Design (v1.2)
 
 > **Status**: LOCKED design contract for the implementation phase.
 > **v1.1**: consistency refinement of v1 — fixed contradictions between examples, grammar, and
 > ISA; specified the parking protocol, block typing, entry point, and REPL contract; corrected
 > effort estimates. One surface change: lambdas may now have block bodies.
+> **v1.2**: spec brought up to the shipped language — `select` documented (§4.6, grammar,
+> ISA); the M9b generic parameter lists added to the §2.11 grammar; Appendix C refreshed to
+> the full shipped error-code registry (new codes P003, L006, R009, R010, R011); `inf`/`nan`
+> rendering locked (Appendix B); REPL continuation rule clarified (§6.4).
 > **Host**: Python 3.12, zero third-party runtime dependencies (pytest for tests only).
 > **Execution model**: source → lexer → parser → AST → type checker → bytecode compiler → stack VM.
 > This document is the single source of truth. Where it is silent, choose the simplest thing
@@ -99,17 +103,17 @@ indentation but the parser expected `{}`. Rules that keep it simple:
 - Identifiers: `[a-zA-Z_][a-zA-Z0-9_]*`. Convention (not enforced): types and enum variants
   are `CamelCase`, values/functions `snake_case`.
 - Keywords (reserved): `fn let var if elif else while for in loop break continue return
-  match enum struct spawn import and or not true false`.
+  match enum struct spawn select import and or not true false`.
   Note: `print`, `chan`, `send`, `recv`, `close`, `sleep` are **prelude intrinsics** (compiled
   to dedicated opcodes), not keywords. `None` is likewise not a keyword — it is a prelude enum
   variant. `chan` lexes as an ordinary IDENT; the parser special-cases a `primary` that begins
   with the identifier `chan` followed by `[` (safe because `chan` cannot be shadowed).
 - **No prelude name may be rebound or shadowed** in v1 (checker error). Intrinsics may appear
   only as the callee of a call — using one as a value is a compile error
-  (`intrinsic 'print' is not a first-class value`). Other builtins (`str`, `len`, `push`, …)
-  are ordinary values, but referencing a *generic* builtin outside call position is also a
-  checker error (its TypeVar signature has no monomorphic type — wrap it:
-  `fn(x: Int): print(x)`).
+  (`intrinsic 'print' is not a first-class value`). Builtins (`str`, `len`, `push`, …) are
+  likewise **not** first-class values: referencing any builtin outside call position is a
+  checker error (E0109, e.g. `let f = float`). Call it, or wrap it in a lambda
+  (`fn(x: Int): print(x)`).
 
 ### 2.3 Literals & primitive types
 
@@ -199,9 +203,11 @@ loop:                              # infinite loop; exit with break
   function declared `-> R` (R ≠ Unit) the rule is purely syntactic: the body's last statement
   must be an expression of type R, a `return`, or a `match` whose arms each satisfy this rule
   — otherwise `error: missing return path — function body ends in a statement of type Unit`.
-- **Comparison domains.** `==`/`!=` are defined for all types except function and channel
-  values (compile error). Ordering `< <= > >=` is defined for `Int`, `Float`, `Str` only.
-  Both operands must have the same type (no mixed Int/Float, per §2.3).
+- **Comparison domains.** `==`/`!=` are defined for `Int`, `Float`, `Bool`, `Str` only;
+  applying them to any other type (enums, tuples, records, functions, channels) is a compile
+  error (E0113). Structural equality on compound values is post-v1. Ordering `< <= > >=` is
+  defined for `Int`, `Float`, `Str` only. Both operands must have the same type (no mixed
+  Int/Float, per §2.3).
 
 ### 2.7 Enums (ADTs), structs, pattern matching
 
@@ -340,17 +346,20 @@ Program exits when `main`'s fiber returns (remaining fibers are dropped, Go-styl
 ```
 module      := { NEWLINE | decl } EOF
 decl        := fn_decl | enum_decl | struct_decl | import_decl | stmt
-fn_decl     := "fn" IDENT "(" [ params ] ")" [ "->" type ] ":" block
+fn_decl     := "fn" IDENT [ type_params ] "(" [ params ] ")" [ "->" type ] ":" block
+type_params := "[" IDENT { "," IDENT } "]"        # M9b generics; empty "[]" is a parse error;
+                                                  # lambdas cannot declare type params
 params      := IDENT ":" type { "," IDENT ":" type }
-enum_decl   := "enum" IDENT ":" NEWLINE INDENT variant { variant } DEDENT
+enum_decl   := "enum" IDENT [ type_params ] ":" NEWLINE INDENT variant { variant } DEDENT
 variant     := IDENT [ "(" type { "," type } ")" ] NEWLINE
-struct_decl := "struct" IDENT ":" NEWLINE INDENT field { field } DEDENT
+struct_decl := "struct" IDENT [ type_params ] ":" NEWLINE INDENT field { field } DEDENT
 field       := IDENT ":" type NEWLINE
 import_decl := "import" IDENT NEWLINE
 
 block       := simple_stmt NEWLINE
              | NEWLINE INDENT stmt { stmt } DEDENT
-stmt        := simple_stmt NEWLINE | if_stmt | while_stmt | for_stmt | loop_stmt | match_expr_stmt
+stmt        := simple_stmt NEWLINE | if_stmt | while_stmt | for_stmt | loop_stmt
+             | match_expr_stmt | select_expr_stmt
 simple_stmt := let_stmt | var_stmt | assign_stmt | return_stmt | break_stmt
              | continue_stmt | spawn_stmt | expr_stmt
 let_stmt    := "let" ( IDENT | "(" IDENT "," IDENT { "," IDENT } ")" ) [ ":" type ] "=" expr
@@ -364,12 +373,18 @@ for_stmt    := "for" IDENT "in" expr ":" block
 loop_stmt   := "loop" ":" block
 if_stmt     := "if" expr ":" block { "elif" expr ":" block } [ "else" ":" block ]
 match_expr_stmt := match_expr
+select_expr_stmt := select_expr
 
-expr        := or_expr | if_expr | match_expr | lambda
+expr        := or_expr | if_expr | match_expr | select_expr | lambda
 if_expr     := "if" expr ":" expr { "elif" expr ":" expr } "else" ":" expr      # inline form
              | "if" expr ":" block { "elif" expr ":" block } "else" ":" block   # block form
 match_expr  := "match" expr ":" NEWLINE INDENT arm { arm } DEDENT
-arm         := pattern "=>" ( simple_stmt NEWLINE | NEWLINE INDENT stmt { stmt } DEDENT )
+arm         := pattern "=>" arm_body
+arm_body    := simple_stmt NEWLINE | NEWLINE INDENT stmt { stmt } DEDENT
+select_expr := "select" ":" NEWLINE INDENT select_arm { select_arm } DEDENT
+select_arm  := [ IDENT "=" ] "recv" "(" expr ")" "=>" arm_body    # binder "_" discards
+             | "send" "(" expr "," expr ")" "=>" arm_body
+             | "else" "=>" arm_body                               # must be the single, last arm
 lambda      := "fn" "(" [ params ] ")" [ "->" type ] ":"
                ( expr | NEWLINE INDENT stmt { stmt } DEDENT )
 or_expr     := and_expr { "or" and_expr }
@@ -388,8 +403,9 @@ pattern     := "_" | [ "-" ] INT | STR | "true" | "false" | IDENT
              | IDENT "(" pattern { "," pattern } ")"
              | "(" pattern "," pattern { "," pattern } ")"
 type        := IDENT [ "[" type { "," type } "]" ]                    # Int, List[Int], Result[Int,Str]
-             | "(" [ type { "," type } ] ")" "->" type                # function type
-             | "(" type "," type { "," type } ")"                     # tuple type
+             | "(" [ type { "," type } ] ")" "->" type                # function type (empty list ⇒ no params)
+             | "(" type ")"                                           # parenthesized/grouped type
+             | "(" type "," type { "," type } ")"                     # tuple type (arity >= 2)
 ```
 
 Parser style: **recursive descent** for statements/declarations + the layered expression
@@ -397,10 +413,15 @@ grammar above (precedence encoded in the function ladder; no Pratt table needed 
 size). Comparison is non-associative: `a < b < c` is a parse error with a helpful message.
 
 Parsing notes: a statement is terminated by NEWLINE, or implicitly by the DEDENT that closes
-a trailing block-form expression (a block `if`/`match`/lambda as a `let`/`var` RHS or return
-value). `assign_stmt` vs `expr_stmt` is LL(2): IDENT followed by `=` (and not `==`) is
+a trailing block-form expression (a block `if`/`match`/`select`/lambda as a `let`/`var` RHS
+or return value). `assign_stmt` vs `expr_stmt` is LL(2): IDENT followed by `=` (and not `==`) is
 assignment. The `chan` primary is a parser special case on the identifier `chan` followed by
-`[` (§2.2).
+`[` (§2.2). In `select_arm`, `recv` and `send` are ordinary IDENT tokens matched by lexeme
+(safe because intrinsics cannot be shadowed, §2.2); a leading `IDENT "="` is the recv binder
+(LL(2), same trick as assignment), and the binder spelling `_` means "discard the payload".
+In **type** position the unit type is spelled `Unit`; `()` is only the unit *literal* (an
+expression) and the empty parameter list of a function type. A bare `()` in type position
+that is not followed by `->` is a parse error that points at `Unit`.
 
 ---
 
@@ -472,6 +493,12 @@ generics are Milestone 9 (stretch) and the design leaves room: `EnumT.args` alre
 type arguments, so adding declaration-site type parameters later does not change the type
 representation.
 
+*[v1.2: superseded — M9b shipped declaration-site generics for fn/enum/struct (`fn f[T, U]`,
+`enum E[T]:`, `struct S[A, B]:`, grammar in §2.11). Generics are ERASED, not monomorphized:
+checked polymorphically, compiled once; type arguments are always inferred (explicit type
+args are post-v1); a generic fn is call-position-only, never a first-class value (E0136).
+Full rulings in DECISIONS.md, M9b rows.]*
+
 ### 3.5 Checker output contract
 
 AST nodes are plain (non-frozen) dataclasses. The checker **annotates in place** and
@@ -498,8 +525,7 @@ mailboxes, selective receive, and PID plumbing; (b) channel element types slot d
 the static type system (`Chan[T]`), while typed actor protocols are a research project;
 (c) with `var`-capture banned (§2.4) fibers share no mutable state, so CSP here is
 race-free by construction, which is the honest version of "Erlang-style safety" at this
-scale. `select` over multiple channels is post-v1 (flagged as the most-requested future
-feature; the parked-fiber design below accommodates it without rework).
+scale. `select` over multiple channels shipped in M9a and is specified in §4.6.
 
 ### 4.2 The GIL question, answered
 
@@ -532,7 +558,7 @@ unit-testable with golden outputs. (Parallelism via multiple VM processes is out
   `sleep_fn(until_next_timer)` (default `time.sleep`) then wakes due fibers. Tests inject a
   fake clock plus a `sleep_fn` that advances it, so timer tests are instant and deterministic.
 - **Deadlock detection for free**: `ready` empty + no timers + parked fibers exist ⇒
-  `panic: deadlock — all fibers are blocked` (prints each parked fiber's stack trace). This
+  `panic: deadlock — every fiber is blocked` (prints each parked fiber's stack trace). This
   includes the case where only the main fiber is parked and every other fiber is DONE —
   DONE fibers are not work.
 - **Exit**: when the main fiber's outermost frame returns, the program exits (code 0);
@@ -569,9 +595,64 @@ an ordinary pattern-match, no sentinel values, no exceptions — see the showcas
 
 ### 4.5 Concurrency opcodes & structures (summary; full ISA in §5)
 
-`SPAWN argc`, `CHAN_NEW` (cap on stack), `CHAN_SEND`, `CHAN_RECV`, `CHAN_CLOSE`, `SLEEP` —
-six opcodes total. VM structures: `Fiber`, `Scheduler`, `Channel` as above. No locks — the
-whole VM is single-threaded, so scheduler data structures need no synchronization.
+`SPAWN argc`, `CHAN_NEW` (cap on stack), `CHAN_SEND`, `CHAN_RECV`, `CHAN_CLOSE`, `SLEEP`,
+plus the M9a pair `SELECT`/`SELECT_DISPATCH` — eight opcodes total. VM structures: `Fiber`,
+`Scheduler`, `Channel` as above. No locks — the whole VM is single-threaded, so scheduler
+data structures need no synchronization.
+
+### 4.6 `select` — waiting on multiple channels (shipped, M9a)
+
+`select` is an **expression** that waits on several channel operations at once and runs the
+arm of the first one that can proceed:
+
+```weft
+let msg: Option[Int] = select:                    # annotation required — `None` needs the expected type
+    v = recv(data)     => v                       # v: Option[Int] — recv's normal contract
+    send(out, answer)  => Some(0)                 # fires when out can accept answer
+    else               => None                    # optional: fires if nothing is ready
+```
+
+Syntax (§2.11 `select_expr`): a match-style indented suite of arms. Arm heads are
+`[binder =] recv(chan)`, `send(chan, value)`, or `else`; a binder of `_` discards the
+payload. Arm bodies follow match's exact arm rules (inline simple statement or indented
+block; expression-valued).
+
+**Typing** (checker): a recv binder has type `Option[T]` for a `Chan[T]` head — recv's
+single contract (§4.4) is unchanged inside select. A send arm's value must have the
+channel's element type. Arm bodies obey match's arm-value rules: in expression position all
+arms must have the same type (divergent arms ending in `break`/`continue`/`return` are
+exempt); in statement position the value is discarded and arm types need not agree. `else`
+must be the **single, last** arm (E0135).
+
+**Evaluation & semantics** (compiler/VM, `SELECT` + `SELECT_DISPATCH`):
+1. All arm operands are evaluated **up front, in source order** — each recv arm's channel
+   expression, each send arm's channel and value expressions (`else` contributes none). Then
+   a single `SELECT` executes.
+2. **Phase 1 — poll, source order.** Arms are polled in source order and the *first ready*
+   arm fires immediately, with exactly the ready-path effects of `CHAN_RECV`/`CHAN_SEND`
+   (§4.4): a recv arm is ready if the channel has buffered values, a parked sender, or is
+   **closed** (a closed channel makes recv arms fire with `None` — they are never skipped);
+   a send arm is ready if a receiver is parked or the buffer has room. A send arm whose
+   channel is closed **panics R003** ("send on closed channel") when it is the first-ready
+   arm. No randomization (Go-style shuffling was rejected): polling is deterministic, and
+   starvation of an always-shadowed later arm is the accepted price.
+3. **No ready arm + `else`**: the `else` arm fires. A select with an `else` arm never parks.
+4. **No ready arm, no `else` — phase 2: park.** The fiber registers a waiter on *every*
+   channel arm and parks. The first counterparty event (a send, a recv, or a `close`)
+   resolves the whole select atomically: a shared `won` flag flips, and the registrations
+   left on the other channels become tombstones that the channel wait-queues skim over
+   later (O(1) cancellation; a `close` wakes a parked recv arm with `None`, and wakes a
+   parked send arm with a pending R003 panic raised on resume). The two-phase
+   poll-then-register protocol also means a same-channel `send` + `recv` pair inside one
+   select can never rendezvous with itself.
+5. **Dispatch.** The counterparty (or the immediate poll) deposits one value — the pair
+   `(case_index, payload)` — preserving the §4.4 one-deposit parking protocol; the
+   instruction after `SELECT` is always `SELECT_DISPATCH`, which pops the pair, pushes the
+   payload (`Some(v)`/`None` for a recv arm; discarded Unit for send/else), and jumps to the
+   arm's body. `ip` is never rewound.
+
+v1 select has **no timer arm**: a timeout is written by spawning a sleeper fiber that sends
+on a timeout channel, then selecting over data + timeout channels.
 
 ---
 
@@ -633,7 +714,7 @@ Stack effect notation: `before → after` (top on the right).
 | `ADD SUB MUL DIV MOD` | — | `a b → r` | arithmetic; `+` also Str concat (never lists — §2.9); Int DIV/MOD floor; zero divisor ⇒ panic |
 | `NEG` | — | `a → -a` | |
 | `NOT` | — | `a → !a` | |
-| `EQ NE LT LE GT GE` | — | `a b → Bool` | structural equality for Variant/Record/tuple |
+| `EQ NE LT LE GT GE` | — | `a b → Bool` | primitives only (Int/Float/Bool/Str); the checker rejects EQ/NE on Variant/Record/tuple (E0113), so those cases are unreachable — structural equality is post-v1 |
 | `JUMP t` | instr idx | `→` | unconditional |
 | `JUMP_IF_FALSE t` | instr idx | `Bool →` | pops |
 | `JUMP_IF_TRUE t` | instr idx | `Bool →` | pops (compiles `and`/`or` with a DUP/POP pattern) |
@@ -655,6 +736,8 @@ Stack effect notation: `before → after` (top on the right).
 | `CHAN_RECV` | — | `chan → Option` | may PARK; yields `Some(v)`/`None` Variant |
 | `CHAN_CLOSE` | — | `chan → ()` | |
 | `SLEEP` | — | `ms → ()` | ms <= 0: yield to back of ready; else PARK on timer heap |
+| `SELECT` | arg=(has_else, kind…) | `ops… → (idx, payload)` | kind: 0=recv (pops chan), 1=send (pops chan, value), operands in source order; poll arms in source order, first ready fires; else (case index = channel-arm count) if none; otherwise PARK on all arms (§4.6) |
+| `SELECT_DISPATCH` | arg=(target…) | `(idx, payload) → payload` | always follows SELECT; pops the pair, pushes payload, computed-jump to `targets[idx]` (absolute instr indices) |
 | `PRINT` | — | `v → ()` | writes `render(v) + "\n"` to VM's stdout (a dedicated op keeps M1 free of the call machinery) |
 | `HALT` | — | — | end of `<module>` code ⇒ main fiber DONE, exit 0 |
 
@@ -787,7 +870,9 @@ AST nodes: mutable dataclasses, every node has `span: Span`; expressions add
 `ty: Type|None = None`. All errors subclass `WeftError` and are rendered by ONE function
 (`errors.render_error`) that prints the offending source line with a caret — every stage,
 same format, from Milestone 1 onward. Process exit codes: **0** success, **1** panic,
-**2** compile-time error (lex/parse/check). Rendered errors print paths relative to the CWD
+**2** compile-time error (lex/parse/check), **130** interrupted (Ctrl-C during
+`run`/`check`/`dis`; the REPL instead prints `KeyboardInterrupt` and continues),
+**141** broken output pipe (stdout or stderr) — the consumer went away (e.g. `weft run x | head`; 128 + SIGPIPE, silent). Rendered errors print paths relative to the CWD
 so golden `.err` files are machine-independent.
 
 ### 6.3 Data-flow invariants (enforced by tests)
@@ -802,13 +887,16 @@ so golden `.err` files are machine-independent.
 
 ### 6.4 REPL contract
 
-Prompts `>>> ` and `... `. A line ending in `:` or with unclosed brackets continues until a
-blank line. Each input runs through the full pipeline against a **persistent** global
+Prompts `>>> ` and `... `. The continuation decision is made **once, on the first line**: a
+(comment-stripped) line ending in `:`, or a line with unclosed brackets, enters continuation
+mode. Once in continuation mode, lines are read until a **blank line** (or EOF) submits the
+whole buffer — blank-line termination applies to bracket continuations exactly as to block
+headers. Each input runs through the full pipeline against a **persistent** global
 environment: one name→index table plus the growing `vm.globals` list and the type
 environment, threaded into `check()`/`compile_module()` for every input. New top-level names
 append (indices are never renumbered); re-`let` of an existing name rebinds the same index —
-the one REPL-only relaxation of §2.4. A non-Unit expression result is rendered
-(container-style quoting, Appendix B) and echoed. Errors render normally and do not end the
+the one REPL-only relaxation of §2.4. A non-Unit expression result is rendered exactly as
+`print` renders it (top-level rendering, Appendix B — a bare string echoes unquoted) and echoed. Errors render normally and do not end the
 session. Ctrl-D exits 0. `spawn` at the prompt runs the scheduler to quiescence before
 re-prompting. `repl.py` takes `(stdin, stdout)` so `test_repl.py` drives it with StringIO.
 
@@ -971,32 +1059,72 @@ Str bare; **nested** (inside containers) prints it quoted using the §2.3 escape
 values render identically in both modes: `42`, `3.14`, `true`, `()` ; `[1, 2]` ; `(1, "a")`
 (List = Python `list` renders `[]`, Tuple = Python `tuple` renders `()` — distinct runtime
 types make this decidable, §5.1) ; `Some(3)` / `None` / `Ok([1])` ; `Point(1.0, 2.0)` ;
-`<fn add>` ; `<chan>`. Locked so golden tests are stable from day one.
+`<fn add>` ; `<chan>`. Non-finite Floats have **no source literal** (they arise only from
+IEEE-754 arithmetic, §2.3) but their rendered form is locked: `inf`, `-inf`, and `nan`.
+Locked so golden tests are stable from day one.
 
 ## Appendix C — Error-code registry
 
-Stable codes live as constants in `errors.py`; ranges: `L0xx` lex, `P0xx` parse, `E0xxx`
-check, `R0xx` runtime panic. Codes are **append-only and never reused**; every rendered
-error and every golden `.err` file includes its code. Seed registry (grows via
-`DECISIONS.md`):
+Stable codes live as constants in `errors.py` (the code-constants block at the bottom of
+that file is the machine-readable form of this table); ranges: `L0xx` lex, `P0xx` parse,
+`E0xxx` check, `R0xx` runtime panic. Codes are **append-only and never reused**; every
+rendered error and every golden `.err` file includes its code. Complete shipped registry
+(v1.2 — matches `errors.py` one-for-one; grows via `DECISIONS.md`):
 
-| Code | Name | Stage | Message |
+| Code | Name | Stage | Message / meaning |
 |---|---|---|---|
 | L001 | tabs-in-indent | lex | tabs are not allowed in indentation |
 | L002 | bad-dedent | lex | unindent does not match any outer indentation level |
 | L003 | illegal-char | lex | illegal character `{ch}` |
-| E0101 | duplicate-definition | check | duplicate definition of '{name}' |
+| L004 | invalid-escape | lex | invalid escape `\{ch}` |
+| L005 | unterminated-string | lex | unterminated string literal |
+| L006 | invalid-number | lex | invalid numeric literal (malformed, e.g. a misplaced underscore) |
+| P001 | unexpected-token | parse | unexpected `{tok}`, expected {what} |
+| P002 | unexpected-eof | parse | unexpected end of input, expected {what} |
+| P003 | nesting-too-deep | parse | expression/type/pattern nesting too deep (recursion cap on every recursive entry point), or expression too long (flat operator chains are capped at 10_000 operands) |
+| E0001 | unsupported | check | construct not available in this build/v1: bad `spawn` targets ("cannot spawn '{name}'; spawn a user-defined function or lambda"), generic `main`, unannotated block-bodied lambdas, `print` arity, match on a foreign (cross-module) enum |
+| E0101 | duplicate-definition | check | duplicate definition of '{name}' / duplicate field '{name}' / '{name}' conflicts with an existing type or imported module (values, types, fields, variants-vs-values, type parameters) |
 | E0102 | assign-immutable | check | cannot assign to immutable binding '{name}' |
-| E0103 | var-capture | check | cannot capture mutable binding '{name}'; copy it into a 'let' first |
+| E0103 | var-capture | check | cannot capture/access mutable binding '{name}' from an enclosing scope; copy it into a 'let' first / cannot access mutable binding '{mod}.{name}' from another module |
 | E0104 | non-bool-condition | check | condition must be Bool |
-| E0105 | non-exhaustive-match | check | match on '{enum}' is not exhaustive; missing: {variants} |
-| E0106 | question-mark-mismatch | check | '?' on Option inside a Result-returning fn (or vice versa) — convert with match |
+| E0105 | non-exhaustive-match | check | match on '{type}' is not exhaustive; missing: {witness} |
+| E0106 | question-mark-mismatch | check | '?' misuse: Option/Result vs the function's return type, '?' on a non-Result/Option, '?' outside a function / in an unannotated lambda |
 | E0107 | cannot-infer-empty-list | check | cannot infer element type of []; add an annotation |
-| E0108 | missing-return-path | check | missing return path — function body ends in a statement of type Unit |
-| E0109 | intrinsic-not-value | check | intrinsic '{name}' is not a first-class value |
-| E0110 | spawn-builtin | check | cannot spawn builtin '{name}' |
+| E0108 | missing-return-path | check | missing return path — function must return {R} on all paths |
+| E0109 | intrinsic-not-value | check | intrinsic '{name}' is not a first-class value / cannot rebind prelude name '{name}' |
+| E0111 | unknown-name | check | unknown name '{name}' |
+| E0112 | type-mismatch | check | expected {T}, found {U} (the general operator/argument/branch/arm mismatch, incl. select head "expects a channel") |
+| E0113 | not-comparable | check | '{op}' is not defined for {T} (ordering beyond Int/Float/Str; `==` beyond primitives) |
+| E0114 | loop-control | check | 'break'/'continue' outside a loop |
+| E0115 | unknown-type | check | unknown type '{name}' (also wrong/missing type arguments on a type) |
+| E0116 | return-outside | check | 'return' outside a function |
+| E0117 | not-callable | check | {T} is not callable |
+| E0118 | arity | check | wrong number of arguments (call/spawn arity mismatch) |
+| E0119 | cannot-infer | check | cannot infer type argument '{T}' …; add an annotation (underdetermined generic/builtin instantiation) |
+| E0120 | unreachable-arm | check | unreachable match arm |
+| E0121 | not-a-variant | check | '{name}' is not a variant of {enum} |
+| E0122 | variant-arity | check | variant pattern/constructor has the wrong number of fields |
+| E0123 | constructor-not-value | check | variant/struct constructor is not a first-class value (call-position only) |
+| E0124 | dup-variant | check | duplicate variant name '{name}' within an enum |
+| E0130 | import-cycle | check | import cycle: a -> b -> a |
+| E0131 | module-not-found | check | cannot find module '{name}' ({name}.weft) |
+| E0132 | not-a-module-member | check | module '{m}' has no member '{name}' |
+| E0133 | module-not-value | check | module '{name}' is not a value |
+| E0134 | import-unsupported | check | import is only available when running a source file (not stdin/REPL) |
+| E0135 | select-else | check | select: 'else' must be the single, last arm |
+| E0136 | generic-not-value | check | generic function '{name}' is not a first-class value (call it — type arguments are always inferred — or wrap it in a lambda) |
 | R001 | div-by-zero | run | division or modulo by zero |
 | R002 | index-out-of-range | run | list index out of range |
 | R003 | send-on-closed | run | send on closed channel |
 | R004 | close-closed | run | close of closed channel |
-| R005 | deadlock | run | deadlock — all fibers are blocked |
+| R005 | deadlock | run | deadlock — every fiber is blocked |
+| R006 | uninitialized | run | value used before initialization (module init order / checker-bug backstop) |
+| R007 | match-fail | run | non-exhaustive match (the `MATCH_FAIL` safety net — should be unreachable) |
+| R008 | step-limit | run | execution step limit reached ({n} instructions) — only when `VM(step_limit=…)` is set |
+| R009 | builtin-error | run | {builtin}: {detail} — a builtin's domain error (wrapped host exception) panics at the call site |
+| R010 | stack-overflow | run | call stack overflow ({cap} frames) |
+| R011 | bad-capacity | run | channel capacity cannot be negative ({cap}) |
+
+Retired numbers: **E0110** (the v1.1 seed table's `spawn-builtin`) was never minted in the
+implementation — spawn-of-builtin ships under E0001 — and, per the never-reuse rule, the
+number stays retired. E0125–E0129 are unassigned gaps left for future check-stage codes.

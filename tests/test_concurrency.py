@@ -71,6 +71,30 @@ def test_sleep_orders_by_wake_time():
     assert code == 0 and out == "Some(1)\nSome(2)\nSome(3)\n"   # recv returns Option, ordered by wake
 
 
+# ------------------------------------------------- W16: fiber registry pruning (leak fix)
+
+import io
+
+from weft.cli import compile_source
+from weft.vm import VM
+from harness import _VirtualClock
+
+
+def test_registry_prunes_done_fibers():
+    # 10000 short-lived fibers must not accumulate in the registry (dict keyed by fid,
+    # popped O(1) on DONE). The trailing sleep parks main so every spawned fiber drains
+    # before main exits.
+    src = ("fn noop(i: Int) -> Unit:\n    let x = i + i\n\n"
+           "fn main() -> Unit:\n    var i = 0\n    while i < 10000:\n"
+           "        spawn noop(i)\n        i = i + 1\n    sleep(1)\n")
+    code = compile_source(src, "many.weft")
+    clk = _VirtualClock()
+    vm = VM(stdout=io.StringIO(), clock=clk.now, sleep_fn=clk.sleep)
+    rc = vm.run(code, src, "many.weft")
+    assert rc == 0
+    assert len(vm.registry) <= 1           # all DONE fibers pruned (main popped on exit too)
+
+
 def test_fanin_total_independent_of_interleaving():
     src = ("fn prod(out: Chan[Int], done: Chan[Int], b: Int) -> Unit:\n"
            "    var i = 0\n    while i < 3:\n        send(out, b + i)\n        i = i + 1\n    send(done, 1)\n\n"

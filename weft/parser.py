@@ -12,11 +12,30 @@ inline simple statement after ':' or a NEWLINE + INDENT … DEDENT suite.
 
 from __future__ import annotations
 
-from weft.errors import Span, ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF
+from weft.errors import Span, ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
 from weft.tokens import Token, TokenType
 from weft import ast_nodes as A
 
 _TT = TokenType
+
+# Maximum nesting depth for expressions, patterns, and types. The checker and
+# compiler use ~3-5 Python stack frames per AST level, so 100 keeps every later
+# phase comfortably under CPython's default recursion limit.
+_MAX_DEPTH = 100
+
+# Maximum operands in a single flat operator chain (`a + b + c + ...`). These parse
+# iteratively (no parser recursion), but build a left-nested BinOp list the checker and
+# compiler later walk recursively; cap the chain so a pathologically long one is a clean
+# P003 rather than a RecursionError. cli.main() raises the recursion limit so this cap
+# sits well inside the guaranteed-safe region (see DECISIONS.md).
+_MAX_CHAIN = 10_000
+
+# Layout tokens carry no lexeme; name them plainly in diagnostics (W20).
+_LAYOUT_NAMES = {
+    _TT.NEWLINE: "end of line",
+    _TT.INDENT: "indentation",
+    _TT.DEDENT: "end of block",
+}
 
 _ADD_OPS = {_TT.PLUS: A.BinOpKind.ADD, _TT.MINUS: A.BinOpKind.SUB}
 _MUL_OPS = {_TT.STAR: A.BinOpKind.MUL, _TT.SLASH: A.BinOpKind.DIV, _TT.PERCENT: A.BinOpKind.MOD}
@@ -30,6 +49,7 @@ class _Parser:
     def __init__(self, tokens: list[Token]) -> None:
         self.tokens = tokens
         self.pos = 0
+        self.depth = 0
 
     # -- token cursor --------------------------------------------------------
 
@@ -62,10 +82,25 @@ class _Parser:
             return self.advance()
         self._unexpected(self.peek(), what)
 
+    def _deeper(self) -> None:
+        """Bump the nesting depth; raise P_TOO_DEEP past _MAX_DEPTH.
+
+        Every recursive entry point (expression, _not, _unary, _pattern, _type)
+        calls this on entry and decrements self.depth in a finally block, so the
+        count stays correct even when a ParseError propagates.
+        """
+        self.depth += 1
+        if self.depth > _MAX_DEPTH:
+            raise ParseError(P_TOO_DEEP, "expression nesting too deep", self.peek().span)
+
     def _unexpected(self, tok: Token, expected: str) -> None:
         if tok.type is _TT.EOF:
             raise ParseError(P_UNEXPECTED_EOF,
                              f"unexpected end of input, expected {expected}", tok.span)
+        friendly = _LAYOUT_NAMES.get(tok.type)
+        if friendly is not None:            # layout tokens have no lexeme: name them plainly
+            raise ParseError(P_UNEXPECTED_TOKEN,
+                             f"unexpected {friendly}, expected {expected}", tok.span)
         what = tok.lexeme if tok.lexeme else tok.type.name
         raise ParseError(P_UNEXPECTED_TOKEN,
                          f"unexpected {what!r}, expected {expected}", tok.span)
@@ -205,12 +240,41 @@ class _Parser:
         value = self.expression()
         return A.Assign(Span.merge(name.span, value.span), name.lexeme, value)
 
-    def if_statement(self) -> A.If:
+    def if_statement(self) -> A.Stmt:
+        """An `if` in statement position: an if-STATEMENT, or (§2.8) an inline
+        if-EXPRESSION whose value is discarded / yielded as the block tail.
+
+        Disambiguation is LL with one committed expression — no backtracking. After
+        `if cond:` an inline branch that can only be a statement (let/var/return/
+        break/continue/spawn, or `name = ...` assignment) is a statement `if`. Any
+        other inline branch parses as ONE expression; if the very next token is a
+        same-line `elif`/`else`, that expression was the first branch of an
+        if-EXPRESSION and we commit to that form; a NEWLINE instead means it was a
+        one-statement inline block of a normal if-STATEMENT.
+        """
         kw = self.advance()  # IF
-        branches: list = []
         cond = self.expression()
         self.expect(_TT.COLON, "':'")
-        branches.append((cond, self._block()))
+        t = self.peek().type
+        stmt_head = t in (_TT.LET, _TT.VAR, _TT.RETURN, _TT.BREAK, _TT.CONTINUE, _TT.SPAWN) \
+            or (t is _TT.IDENT and self.peek2().type is _TT.EQ)
+        if t is not _TT.NEWLINE and not stmt_head:
+            e = self.expression()
+            after = self.peek().type
+            if after in (_TT.ELIF, _TT.ELSE) and self.tokens[self.pos - 1].type is not _TT.DEDENT:
+                # same-line elif/else after the branch expression → if-EXPRESSION (§2.8)
+                node = self._if_expr_tail(kw, [(cond, [A.ExprStmt(e.span, e)])])
+                if self.tokens[self.pos - 1].type is not _TT.DEDENT:
+                    self.expect(_TT.NEWLINE, "end of statement")
+                return A.ExprStmt(node.span, node)
+            # NEWLINE (or the DEDENT of a trailing block-form expr) → statement if
+            # with a one-statement inline block; same termination rule as simple_statement.
+            if self.tokens[self.pos - 1].type is not _TT.DEDENT:
+                self.expect(_TT.NEWLINE, "end of statement")
+            first_body: list[A.Stmt] = [A.ExprStmt(e.span, e)]
+        else:
+            first_body = self._block()
+        branches: list = [(cond, first_body)]
         while self.check(_TT.ELIF):
             self.advance()
             c = self.expression()
@@ -313,15 +377,19 @@ class _Parser:
     # -- expressions ---------------------------------------------------------
 
     def expression(self) -> A.Expr:
-        if self.check(_TT.IF):
-            return self._if_expr()
-        if self.check(_TT.FN):
-            return self._lambda()
-        if self.check(_TT.MATCH):
-            return self._match()
-        if self.check(_TT.SELECT):
-            return self._select()
-        return self._or()
+        self._deeper()
+        try:
+            if self.check(_TT.IF):
+                return self._if_expr()
+            if self.check(_TT.FN):
+                return self._lambda()
+            if self.check(_TT.MATCH):
+                return self._match()
+            if self.check(_TT.SELECT):
+                return self._select()
+            return self._or()
+        finally:
+            self.depth -= 1
 
     # -- enums, match, patterns ----------------------------------------------
 
@@ -439,68 +507,85 @@ class _Parser:
         return A.SelectArm(Span.merge(start, rp.span), "send", None, ch, val, self._arm_tail())
 
     def _pattern(self) -> A.Pattern:
-        tok = self.peek()
-        t = tok.type
-        if t is _TT.MINUS or t is _TT.INT:
-            neg = self.match(_TT.MINUS)
-            num = self.expect(_TT.INT, "an integer literal pattern")
-            v = -num.value if neg else num.value
-            return A.PLiteral(Span.merge(tok.span, num.span), v, "int")
-        if t is _TT.STR:
-            self.advance()
-            return A.PLiteral(tok.span, tok.value, "str")
-        if t is _TT.TRUE:
-            self.advance()
-            return A.PLiteral(tok.span, True, "bool")
-        if t is _TT.FALSE:
-            self.advance()
-            return A.PLiteral(tok.span, False, "bool")
-        if t is _TT.FLOAT:
-            self._unexpected(tok, "a pattern (Float literal patterns are not allowed — "
-                                  "match a Float with a binding and comparisons)")
-        if t is _TT.IDENT:
-            name = self.advance()
-            if name.lexeme == "_":
-                return A.PWildcard(name.span)
-            if self.match(_TT.LPAREN):
-                args = [self._pattern()]
-                while self.match(_TT.COMMA):
-                    args.append(self._pattern())
-                rp = self.expect(_TT.RPAREN, "')'")
-                return A.PVariant(Span.merge(name.span, rp.span), name.lexeme, args)
-            return A.PIdent(name.span, name.lexeme)
-        if t is _TT.LPAREN:
-            lp = self.advance()
-            first = self._pattern()
-            if self.match(_TT.COMMA):
-                elems = [first, self._pattern()]
-                while self.match(_TT.COMMA):
-                    elems.append(self._pattern())
-                rp = self.expect(_TT.RPAREN, "')'")
-                return A.PTuple(Span.merge(lp.span, rp.span), elems)
-            self.expect(_TT.RPAREN, "')'")
-            return first  # grouped pattern
-        self._unexpected(tok, "a pattern")
+        self._deeper()
+        try:
+            tok = self.peek()
+            t = tok.type
+            if t is _TT.MINUS or t is _TT.INT:
+                neg = self.match(_TT.MINUS)
+                num = self.expect(_TT.INT, "an integer literal pattern")
+                v = -num.value if neg else num.value
+                return A.PLiteral(Span.merge(tok.span, num.span), v, "int")
+            if t is _TT.STR:
+                self.advance()
+                return A.PLiteral(tok.span, tok.value, "str")
+            if t is _TT.TRUE:
+                self.advance()
+                return A.PLiteral(tok.span, True, "bool")
+            if t is _TT.FALSE:
+                self.advance()
+                return A.PLiteral(tok.span, False, "bool")
+            if t is _TT.FLOAT:
+                self._unexpected(tok, "a pattern (Float literal patterns are not allowed — "
+                                      "match a Float with a binding and comparisons)")
+            if t is _TT.IDENT:
+                name = self.advance()
+                if name.lexeme == "_":
+                    return A.PWildcard(name.span)
+                if self.match(_TT.LPAREN):
+                    args = [self._pattern()]
+                    while self.match(_TT.COMMA):
+                        args.append(self._pattern())
+                    rp = self.expect(_TT.RPAREN, "')'")
+                    return A.PVariant(Span.merge(name.span, rp.span), name.lexeme, args)
+                return A.PIdent(name.span, name.lexeme)
+            if t is _TT.LPAREN:
+                lp = self.advance()
+                first = self._pattern()
+                if self.match(_TT.COMMA):
+                    elems = [first, self._pattern()]
+                    while self.match(_TT.COMMA):
+                        elems.append(self._pattern())
+                    rp = self.expect(_TT.RPAREN, "')'")
+                    return A.PTuple(Span.merge(lp.span, rp.span), elems)
+                self.expect(_TT.RPAREN, "')'")
+                return first  # grouped pattern
+            self._unexpected(tok, "a pattern")
+        finally:
+            self.depth -= 1
 
     def _if_expr(self) -> A.Expr:
         kw = self.advance()  # IF
-        branches: list = []
         cond = self.expression()
         self.expect(_TT.COLON, "':'")
-        branches.append((cond, self.expression()))
+        return self._if_expr_tail(kw, [(cond, self._if_branch())])
+
+    def _if_expr_tail(self, kw: Token, branches: list) -> A.IfExpr:
+        """The `{elif}* else` tail of an if-expression (first branch already parsed)."""
         while self.check(_TT.ELIF):
             self.advance()
             c = self.expression()
             self.expect(_TT.COLON, "':'")
-            branches.append((c, self.expression()))
+            branches.append((c, self._if_branch()))
         self.expect(_TT.ELSE, "'else' (an if-expression must have an else)")
         self.expect(_TT.COLON, "':'")
-        orelse = self.expression()
-        return A.IfExpr(Span.merge(kw.span, orelse.span), branches, orelse)
+        orelse = self._if_branch()
+        return A.IfExpr(Span.merge(kw.span, orelse[-1].span), branches, orelse)
+
+    def _if_branch(self) -> list[A.Stmt]:
+        """One if-expression branch body: an indented block, or an inline expression (§2.6)."""
+        if self.check(_TT.NEWLINE):
+            return self._block()
+        e = self.expression()
+        return [A.ExprStmt(e.span, e)]
 
     def _or(self) -> A.Expr:
         left = self._and()
+        n = 1
         while self.check(_TT.OR):
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             self.advance()
             right = self._and()
             left = A.Logical(Span.merge(left.span, right.span), A.LogicalKind.OR, left, right)
@@ -508,18 +593,26 @@ class _Parser:
 
     def _and(self) -> A.Expr:
         left = self._not()
+        n = 1
         while self.check(_TT.AND):
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             self.advance()
             right = self._not()
             left = A.Logical(Span.merge(left.span, right.span), A.LogicalKind.AND, left, right)
         return left
 
     def _not(self) -> A.Expr:
-        if self.check(_TT.NOT):
-            tok = self.advance()
-            operand = self._not()
-            return A.Unary(Span.merge(tok.span, operand.span), A.UnOpKind.NOT, operand)
-        return self._cmp()
+        self._deeper()
+        try:
+            if self.check(_TT.NOT):
+                tok = self.advance()
+                operand = self._not()
+                return A.Unary(Span.merge(tok.span, operand.span), A.UnOpKind.NOT, operand)
+            return self._cmp()
+        finally:
+            self.depth -= 1
 
     def _cmp(self) -> A.Expr:
         left = self._add()
@@ -535,7 +628,11 @@ class _Parser:
 
     def _add(self) -> A.Expr:
         left = self._mul()
+        n = 1
         while self.peek().type in _ADD_OPS:
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             op = _ADD_OPS[self.advance().type]
             right = self._mul()
             left = A.BinOp(Span.merge(left.span, right.span), op, left, right)
@@ -543,18 +640,26 @@ class _Parser:
 
     def _mul(self) -> A.Expr:
         left = self._unary()
+        n = 1
         while self.peek().type in _MUL_OPS:
+            n += 1
+            if n > _MAX_CHAIN:
+                raise ParseError(P_TOO_DEEP, "expression too long", self.peek().span)
             op = _MUL_OPS[self.advance().type]
             right = self._unary()
             left = A.BinOp(Span.merge(left.span, right.span), op, left, right)
         return left
 
     def _unary(self) -> A.Expr:
-        if self.check(_TT.MINUS):
-            optok = self.advance()
-            operand = self._unary()
-            return A.Unary(Span.merge(optok.span, operand.span), A.UnOpKind.NEG, operand)
-        return self._postfix()
+        self._deeper()
+        try:
+            if self.check(_TT.MINUS):
+                optok = self.advance()
+                operand = self._unary()
+                return A.Unary(Span.merge(optok.span, operand.span), A.UnOpKind.NEG, operand)
+            return self._postfix()
+        finally:
+            self.depth -= 1
 
     def _postfix(self) -> A.Expr:
         expr = self._primary()
@@ -629,6 +734,9 @@ class _Parser:
             return A.ListLit(Span.merge(lb.span, rb.span), elems)
         if t is _TT.LPAREN:
             lp = self.advance()
+            if self.check(_TT.RPAREN):               # unit literal `()` (§2.11 primary)
+                rp = self.advance()
+                return A.UnitLit(Span.merge(lp.span, rp.span))
             first = self.expression()
             if self.match(_TT.COMMA):                # tuple (arity >= 2; no 1-tuples)
                 elems = [first, self.expression()]
@@ -647,16 +755,20 @@ class _Parser:
     def _type(self) -> A.TypeExpr:
         # §2.11 `type`: function type `(T, ...) -> R`, or IDENT with optional [args].
         # Tuple types `(T, T)` arrive in M5.
-        if self.check(_TT.LPAREN):
-            return self._fn_type()
-        name = self.expect(_TT.IDENT, "a type name")
-        if self.match(_TT.LBRACKET):
-            args = [self._type()]
-            while self.match(_TT.COMMA):
-                args.append(self._type())
-            rb = self.expect(_TT.RBRACKET, "']'")
-            return A.NamedType(Span.merge(name.span, rb.span), name.lexeme, args)
-        return A.NamedType(name.span, name.lexeme, [])
+        self._deeper()
+        try:
+            if self.check(_TT.LPAREN):
+                return self._fn_type()
+            name = self.expect(_TT.IDENT, "a type name")
+            if self.match(_TT.LBRACKET):
+                args = [self._type()]
+                while self.match(_TT.COMMA):
+                    args.append(self._type())
+                rb = self.expect(_TT.RBRACKET, "']'")
+                return A.NamedType(Span.merge(name.span, rb.span), name.lexeme, args)
+            return A.NamedType(name.span, name.lexeme, [])
+        finally:
+            self.depth -= 1
 
     def _fn_type(self) -> A.TypeExpr:
         lp = self.advance()  # LPAREN
@@ -669,6 +781,10 @@ class _Parser:
         if self.match(_TT.ARROW):                    # function type
             ret = self._type()
             return A.FnTypeExpr(Span.merge(lp.span, ret.span), parts, ret)
+        if not parts:                                # `()` alone is not a type (only `() -> R` is)
+            raise ParseError(P_UNEXPECTED_TOKEN,
+                             "expected a type; for the unit type write 'Unit'",
+                             Span.merge(lp.span, rp.span))
         if len(parts) == 1:
             return parts[0]                          # parenthesized single type
         return A.TupleTypeExpr(Span.merge(lp.span, rp.span), parts)   # tuple type (arity >= 2)

@@ -174,9 +174,11 @@ L_BAD_DEDENT = "L002"
 L_ILLEGAL_CHAR = "L003"
 L_INVALID_ESCAPE = "L004"
 L_UNTERMINATED_STRING = "L005"
+L_INVALID_NUMBER = "L006"       # malformed numeric literal (misplaced underscore)
 # Parse
 P_UNEXPECTED_TOKEN = "P001"
 P_UNEXPECTED_EOF = "P002"
+P_TOO_DEEP = "P003"             # expression/type/pattern nesting too deep
 # Check
 E_UNSUPPORTED = "E0001"   # construct not yet available in the current build milestone
 E_DUPLICATE = "E0101"
@@ -218,3 +220,6 @@ R_DEADLOCK = "R005"
 R_UNINIT = "R006"
 R_MATCH_FAIL = "R007"
 R_STEP_LIMIT = "R008"
+R_BUILTIN = "R009"              # builtin domain error (wrapped host exception)
+R_STACK_OVERFLOW = "R010"      # call stack overflow ({cap} frames)
+R_BAD_CAP = "R011"             # channel capacity cannot be negative ({cap})

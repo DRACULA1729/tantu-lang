@@ -1,0 +1,28 @@
+# DESIGN.md §2.6 "Control flow — expression-oriented", verbatim.
+# Preamble binds the free names the spec snippet uses (score, x, n, items, done).
+let score = 85
+let x = 3
+var n = 2
+let items = [10, 20]
+fn done() -> Bool: true
+
+let grade = if score >= 90: "A" elif score >= 80: "B" else: "C"
+
+let y = if x > 0:                  # block-form if in expression position:
+    let z = x * 2                  # the "if" must start on the same line as "="
+    z + 1                          # block value = last expression
+else:
+    0
+
+while n > 0:                       # loops are statements (type Unit)
+    n = n - 1
+
+for item in items:                 # items: List[T]; item is an immutable let per iteration
+    print(item)
+
+loop:                              # infinite loop; exit with break
+    if done(): break
+
+print(grade)
+print(y)
+print(n)

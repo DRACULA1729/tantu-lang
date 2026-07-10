@@ -1,7 +1,3 @@
 not_a_variant.weft:8:9: check error [E0121]: variant 'Y' belongs to enum B, not A
           Y => 1
           ^
-
-not_a_variant.weft:9:9: check error [E0120]: unreachable match arm
-          _ => 0
-          ^

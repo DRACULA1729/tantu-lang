@@ -14,6 +14,7 @@ from __future__ import annotations
 from weft.errors import (
     Span, LexError,
     L_TABS_IN_INDENT, L_BAD_DEDENT, L_ILLEGAL_CHAR, L_INVALID_ESCAPE, L_UNTERMINATED_STRING,
+    L_INVALID_NUMBER,
 )
 from weft.tokens import Token, TokenType, KEYWORDS
 
@@ -168,6 +169,13 @@ class _Lexer:
                 self.i = j
                 self._consume_digits()
         text = self.src[start:self.i]
+        # Every '_' must sit between two digits: `1_000` is fine, `1_`, `1__0`,
+        # and `1._5` are L006 (they used to lex silently as `1`/`10`/...).
+        for k, ch in enumerate(text):
+            if ch == "_" and not (k > 0 and "0" <= text[k - 1] <= "9"
+                                  and k + 1 < len(text) and "0" <= text[k + 1] <= "9"):
+                raise LexError(L_INVALID_NUMBER, "invalid numeric literal",
+                               self._span(start, self.i))
         cleaned = text.replace("_", "")
         if is_float:
             self._emit(_TT.FLOAT, start, self.i, float(cleaned))

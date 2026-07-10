@@ -101,6 +101,14 @@ class BoolLit(Expr):
 
 
 @dataclass
+class UnitLit(Expr):
+    """The unit literal `()` (§2.11 primary) — type Unit, runtime value None."""
+
+    def pretty(self) -> str:
+        return "(unit)"
+
+
+@dataclass
 class Name(Expr):
     ident: str
     res: object | None = field(default=None, kw_only=True)  # Resolution, filled by checker (M2+)
@@ -211,12 +219,12 @@ class Logical(Expr):
 
 @dataclass
 class IfExpr(Expr):
-    branches: list  # list[tuple[Expr, Expr]] — (condition, value)
-    orelse: Expr
+    branches: list  # list[tuple[Expr, list[Stmt]]] — (condition, body; value = tail expr)
+    orelse: list    # list[Stmt] — an inline branch is a 1-element [ExprStmt(expr)]
 
     def pretty(self) -> str:
-        arms = " ".join(f"({c.pretty()} {e.pretty()})" for c, e in self.branches)
-        return f"(if-expr {arms} (else {self.orelse.pretty()}))"
+        arms = " ".join(f"({c.pretty()} {_block_pretty(b)})" for c, b in self.branches)
+        return f"(if-expr {arms} (else {_block_pretty(self.orelse)}))"
 
 
 # -- statements ----------------------------------------------------------------------------

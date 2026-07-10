@@ -12,6 +12,8 @@ from weft.wtypes import INT, BOOL, STR
 from weft.errors import (
     CheckErrors, E_UNKNOWN_NAME, E_ASSIGN_IMMUTABLE, E_NON_BOOL_COND,
     E_TYPE_MISMATCH, E_LOOP_CONTROL, E_DUPLICATE, E_UNKNOWN_TYPE,
+    E_CANNOT_INFER, E_UNREACHABLE, E_NON_EXHAUSTIVE, E_INTRINSIC_NOT_VALUE,
+    E_VARIANT_ARITY, E_NOT_A_VARIANT,
 )
 
 
@@ -307,3 +309,252 @@ def test_bidirectional_if_infers_variant():
 def test_bidirectional_match_arm_infers_variant():
     check_src('fn f(o: Option[Int]) -> Result[Int, Str]:\n'
               '    match o:\n        Some(n) => Ok(n)\n        None => Err("none")\n')
+
+
+# -- W2: '?' / 'return' inside an unannotated inline lambda -------------------
+
+def test_question_in_unannotated_inline_lambda_is_error():
+    # soundness repro: previously checked clean and let the Err escape as the payload
+    src = ('fn get() -> Result[Int, Str]:\n    Err("boom")\n'
+           'fn outer() -> Result[Int, Str]:\n'
+           '    let f = fn(): get()?\n    let x = f()\n    Ok(x)\n')
+    errs = errors_of(src)
+    assert errs[0].code == "E0106"
+    assert "return-type annotation" in errs[0].message
+
+
+def test_question_in_annotated_inline_lambda_ok():
+    check_src('fn get() -> Result[Int, Str]:\n    Err("boom")\n'
+              'fn outer() -> Result[Int, Str]:\n'
+              '    let f = fn() -> Result[Int, Str]: Ok(get()?)\n    f()\n')
+
+
+def test_return_in_match_inside_unannotated_inline_lambda_is_error():
+    src = ('let f = fn(b: Bool): match b:\n'
+           '    true => return 1\n'
+           '    false => 2\n')
+    errs = errors_of(src)
+    assert errs[0].code == "E0106"
+    assert "'return' inside a lambda" in errs[0].message
+
+
+def test_module_level_inline_lambda_question_message():
+    # previously misreported as "'?' is only valid inside a function"
+    src = ('fn get() -> Result[Int, Str]:\n    Err("boom")\n'
+           'let f = fn(): get()?\n')
+    errs = errors_of(src)
+    assert errs[0].code == "E0106"
+    assert errs[0].message == \
+        "'?' inside a lambda without a return-type annotation; add '-> T'"
+
+
+# -- W9: unit literal () -------------------------------------------------------
+
+def test_unit_literal_has_unit_type():
+    m = check_src("let u = ()\n")
+    assert m.decls[0].value.ty is UNIT
+
+
+def test_unit_literal_checks_against_unit_annotation():
+    check_src("let u: Unit = ()\n")                      # ok
+    assert errors_of("let u: Int = ()\n")[0].code == E_TYPE_MISMATCH
+
+
+# -- W10: if-expression branch typing (inline, statement-position, block-form) --
+
+def test_if_expr_branch_types_must_agree():
+    errs = errors_of('let a = true\nlet g = if a: 1 else: "x"\n')
+    assert errs[0].code == E_TYPE_MISMATCH
+    assert "if-expression branches" in errs[0].message
+
+
+def test_if_expr_condition_must_be_bool():
+    assert errors_of("let g = if 1: 2 else: 3\n")[0].code == E_NON_BOOL_COND
+
+
+def test_block_form_if_expr_infers_from_tail():
+    src = ("let x = 3\n"
+           "let y = if x > 0:\n"
+           "    let z = x * 2\n"
+           "    z + 1\n"
+           "else:\n"
+           "    0\n")
+    m = check_src(src)
+    assert m.decls[1].value.ty is INT
+
+
+def test_block_form_if_expr_branch_mismatch():
+    src = ("let x = 3\n"
+           "let y = if x > 0:\n"
+           "    let z = x * 2\n"
+           "    z + 1\n"
+           "else:\n"
+           '    "nope"\n')
+    errs = errors_of(src)
+    assert errs[0].code == E_TYPE_MISMATCH
+    assert "if-expression branches" in errs[0].message
+
+
+def test_expected_type_flows_into_if_expr_branches():
+    # §2.8's example shape: `None` in a branch is only typeable because the
+    # function's declared Option[Str] return type flows into each branch.
+    check_src('fn find_user(id: Int) -> Option[Str]:\n'
+              '    if id == 1: Some("ada") else: None\n')
+
+
+def test_expected_type_flows_into_block_form_branches():
+    check_src('fn pick(b: Bool) -> Option[Int]:\n'
+              '    if b:\n'
+              '        Some(1)\n'
+              '    else:\n'
+              '        None\n')
+
+
+def test_statement_position_if_expr_return_type_conformance():
+    errs = errors_of('fn f(x: Int) -> Str:\n'
+                     '    if x > 0: 1 else: 2\n')
+    assert errs[0].code == E_TYPE_MISMATCH
+
+
+def test_if_expr_divergent_branch_is_exempt_from_agreement():
+    # a branch ending in `return` diverges — like a match arm, it contributes no type
+    check_src('fn f(x: Int) -> Int:\n'
+              '    let y = if x > 0: x else:\n'
+              '        return 0\n'
+              '    y + 1\n')
+
+
+# --------------------------------------- W11: expected-type flow into elements
+
+def test_expected_type_flows_into_list_elements():
+    check_src("let xs: List[Option[Int]] = [None]\n")
+    check_src("let xs: List[Option[Int]] = [Some(1), None]\n")
+
+
+def test_expected_type_flows_into_call_argument():
+    check_src("fn f(x: Option[Option[Int]]) -> Unit:\n    print(1)\n"
+              "fn main() -> Unit:\n    f(Some(None))\n")
+
+
+def test_expected_type_flows_into_tuple_elements():
+    check_src("let t: (Option[Int], Int) = (None, 3)\n")
+
+
+def test_expected_type_flows_into_spawn_argument():
+    check_src("fn worker(x: Option[Int]) -> Unit:\n    print(1)\n"
+              "fn main() -> Unit:\n    spawn worker(None)\n")
+
+
+def test_ambiguous_none_without_expected_type_still_errors():
+    assert errors_of("let x = None\n")[0].code == E_CANNOT_INFER
+
+
+# --------------------------------------- W14: match error-cascade suppression
+
+def test_bad_pattern_reports_only_root_error():
+    # a wrong-enum variant pattern: exactly E0121, no E0120/E0105 exhaustiveness noise
+    src = ("enum A:\n    X\nenum B:\n    Y\n"
+           "fn f(a: A) -> Int:\n    match a:\n        Y => 1\n        _ => 0\n")
+    errs = errors_of(src)
+    assert [e.code for e in errs] == ["E0121"]
+    assert E_UNREACHABLE not in {e.code for e in errs}
+    assert E_NON_EXHAUSTIVE not in {e.code for e in errs}
+
+
+# --------------------------------------- W12: name-hygiene sweep (§2.2/§2.7)
+
+def test_duplicate_fn_param_is_rejected():
+    assert errors_of("fn f(a: Int, a: Int) -> Int:\n    a\n")[0].code == E_DUPLICATE
+
+
+def test_prelude_name_as_fn_param_is_rejected():
+    assert errors_of("fn f(None: Int) -> Int:\n    1\n")[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_duplicate_lambda_param_is_rejected():
+    src = "fn m() -> Unit:\n    let g = fn(x: Int, x: Int) -> Int: x\n    print(1)\n"
+    assert errors_of(src)[0].code == E_DUPLICATE
+
+
+def test_prelude_name_as_for_binder_is_rejected():
+    src = "fn m() -> Unit:\n    for Some in [1, 2]:\n        print(Some)\n"
+    assert errors_of(src)[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_duplicate_name_in_let_tuple_is_rejected():
+    assert errors_of("let (a, a) = (1, 2)\n")[0].code == E_DUPLICATE
+
+
+def test_prelude_name_as_let_is_rejected():
+    assert errors_of("let None = 1\n")[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_prelude_name_as_match_binder_is_rejected():
+    src = "fn f(n: Int) -> Int:\n    match n:\n        Option => 1\n"
+    assert errors_of(src)[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_duplicate_struct_field_is_rejected():
+    assert errors_of("struct P:\n    x: Int\n    x: Int\n")[0].code == E_DUPLICATE
+
+
+def test_fn_name_collides_with_struct():
+    assert errors_of("struct Foo:\n    x: Int\nfn Foo() -> Int:\n    1\n")[0].code == E_DUPLICATE
+
+
+def test_variant_name_collides_with_fn():
+    assert errors_of("fn Foo() -> Int:\n    1\nenum E:\n    Foo\n")[0].code == E_DUPLICATE
+
+
+def test_variant_name_collides_with_struct():
+    assert errors_of("struct Bar:\n    x: Int\nenum E:\n    Bar\n")[0].code == E_DUPLICATE
+
+
+def test_legit_inner_scope_shadowing_still_works():
+    check_src("let x = 1\nif true:\n    let x = 2\n    print(x)\n")
+
+
+def test_same_binder_across_match_arms_still_works():
+    check_src("enum E:\n    A(Int)\n    B(Int)\n"
+              "fn f(e: E) -> Int:\n    match e:\n        A(v) => v\n        B(v) => v\n")
+
+
+def test_malformed_ctor_pattern_binds_binders_no_cascade():
+    # Some expects 1 arg; Some(a, b) is malformed. Only E0122 must surface — the arm body's
+    # use of `a` must NOT cascade into E0111 (its binders are bound with type ERROR). (Fix 5)
+    errs = errors_of(
+        "fn f(x: Option[Int]) -> Int:\n"
+        "    match x:\n"
+        "        Some(a, b) => a\n"
+        "        None => 0\n")
+    assert [e.code for e in errs] == [E_VARIANT_ARITY]
+
+
+def test_correct_arity_variant_pattern_still_checks():
+    check_src(
+        "fn f(x: Option[Int]) -> Int:\n"
+        "    match x:\n"
+        "        Some(a) => a\n"
+        "        None => 0\n")
+
+
+def test_not_a_variant_pattern_binds_binders_no_cascade():
+    # Bogus is not a variant of Int: only E0121 must surface — the arm body's use of `x`
+    # must NOT cascade into E0111 (binders bound with type ERROR). (round-4 Fix 2)
+    errs = errors_of(
+        "fn f(n: Int) -> Int:\n"
+        "    match n:\n"
+        "        Bogus(x) => x\n"
+        "        _ => 0\n")
+    assert [e.code for e in errs] == [E_NOT_A_VARIANT]
+
+
+def test_tuple_pattern_mismatch_binds_binders_no_cascade():
+    # a tuple pattern against a non-tuple scrutinee: only E0112 must surface — the arm body's
+    # use of `a` must NOT cascade into E0111 (binders bound with type ERROR). (round-4 Fix 2)
+    errs = errors_of(
+        "fn f(n: Int) -> Int:\n"
+        "    match n:\n"
+        "        (a, b) => a\n"
+        "        _ => 0\n")
+    assert [e.code for e in errs] == [E_TYPE_MISMATCH]

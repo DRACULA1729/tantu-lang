@@ -51,7 +51,10 @@ def sort_of(ty) -> tuple:
 def _signature(sort, registry):
     """The full set of constructor keys for a sort, or None if infinite/unknown."""
     if sort[0] == "enum":
-        return {v.tag for v in registry[sort[1]].variants}
+        edef = registry.get(sort[1])
+        if edef is None:            # foreign/unknown enum: no definition → never complete
+            return None
+        return {v.tag for v in edef.variants}
     if sort[0] == "bool":
         return {True, False}
     if sort[0] == "tuple":
@@ -95,7 +98,9 @@ def _default(matrix):
 
 def _missing(sort, heads, registry) -> str:
     if sort[0] == "enum":
-        edef = registry[sort[1]]
+        edef = registry.get(sort[1])
+        if edef is None:            # foreign/unknown enum: no variant names to offer
+            return "_"
         for v in edef.variants:
             if v.tag not in heads:
                 inner = ", ".join("_" for _ in v.payload)

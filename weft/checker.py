@@ -34,11 +34,16 @@ from weft.errors import (
     E_SELECT_ELSE, E_GENERIC_NOT_VALUE,
 )
 
+# Return-frame sentinel for an unannotated inline lambda: its return type is inferred from the
+# body expression, so `?`/`return` have no frame type to check against and must be rejected.
+_INFER = object()
+
 _PRIMS = {"Int": INT, "Float": FLOAT, "Bool": BOOL, "Str": STR, "Unit": UNIT}
 _ARITH = {A.BinOpKind.ADD, A.BinOpKind.SUB, A.BinOpKind.MUL, A.BinOpKind.DIV, A.BinOpKind.MOD}
 _EQUALITY = {A.BinOpKind.EQ, A.BinOpKind.NE}
 _ORDERING = {A.BinOpKind.LT, A.BinOpKind.LE, A.BinOpKind.GT, A.BinOpKind.GE}
 _RESERVED = {"print", "send", "recv", "close", "sleep", "chan"}   # unshadowable prelude names (§2.2)
+_PRELUDE_NAMES = {"Some", "None", "Ok", "Err", "Option", "Result"}   # prelude ctor/type names (§2.2)
 
 # Channel intrinsics (M7): call-position-only, compiled to dedicated opcodes (not CALL).
 _ITV = TypeVar("T")
@@ -54,12 +59,15 @@ class _Checker:
     def __init__(self) -> None:
         self.errors: list[CheckError] = []
         self.loop_depth = 0
-        self.ret_stack: list[Type] = []   # enclosing function return types; empty = module level
+        # enclosing function return types (or _INFER for an unannotated inline lambda);
+        # empty = module level
+        self.ret_stack: list = []
         self.main_slot: int | None = None
         self.enums: dict[str, EnumDef] = prelude_enums()
         self.enum_names: set[str] = set()                     # user enum names (for forward refs)
         self.structs: dict[str, StructDef] = {}               # struct registry (M5)
         self.struct_names: set[str] = set()                   # user struct names (forward refs)
+        self.fn_names: set[str] = set()                       # top-level fn names (§2.7 census)
         self.module_names: set[str] = set()                   # imported module names (M8)
         self.imports: dict[str, dict] = {}                    # module -> {sym: (slot, type)}
         self.variant_index: dict[str, tuple[str, int]] = {}   # variant name -> (enum, tag)
@@ -133,6 +141,25 @@ class _Checker:
     def _has_typevar(self, ty: Type) -> bool:
         return bool(self._tyvar_names(ty))
 
+    def _contains_error(self, ty: Type) -> bool:
+        """True if the ERROR sentinel appears anywhere in `ty` — used to stop a failed
+        sub-expression from leaking `<error>` into user-facing generic-call diagnostics."""
+        if ty is ERROR:
+            return True
+        if isinstance(ty, (ListT, ChanT)):
+            return self._contains_error(ty.elem)
+        if isinstance(ty, TupleT):
+            return any(self._contains_error(t) for t in ty.items)
+        if isinstance(ty, FnT):
+            return any(self._contains_error(t) for t in ty.params) or self._contains_error(ty.ret)
+        if isinstance(ty, (EnumT, StructT)):
+            return any(self._contains_error(t) for t in ty.args)
+        return False
+
+    def _subst_poisoned(self, sub: dict) -> bool:
+        """True if any bound type in the substitution carries ERROR (inference already failed)."""
+        return any(self._contains_error(t) for t in sub.values())
+
     def _generic_callee(self, e: A.Call, scope: Scope) -> tuple[object, FnT] | None:
         """If `e.func` names a generic fn (local binding or imported member), return (res, FnT)
         and set `e.func.res`. Otherwise None. Pure lookup — emits no errors (Fable ruling)."""
@@ -146,7 +173,7 @@ class _Checker:
                 and f.obj.ident in self.module_names and scope.lookup(f.obj.ident) is None:
             mod = self.imports.get(f.obj.ident, {})
             if f.name in mod:
-                slot, ty = mod[f.name]
+                slot, ty, _ = mod[f.name]
                 if isinstance(ty, FnT) and self._has_typevar(ty):
                     f.res = ImportedGlobal(f.obj.ident, slot)
                     return ty
@@ -170,9 +197,19 @@ class _Checker:
                        f"expected {len(fty.params)} argument(s), got {len(e.args)}", e.span)
             return ERROR
         sub: dict = {}
+        poisoned = False
         for pt, at, a in zip(fty.params, arg_tys, e.args):
+            if self._contains_error(at):   # E0119 already reported at this arg; don't cascade
+                poisoned = True
+                continue
             if not self._unify(pt, at, sub):
-                self.error(E_TYPE_MISMATCH, f"expected {subst(pt, sub)!r}, found {at!r}", a.span)
+                if poisoned or self._subst_poisoned(sub):   # inference already failed: stay quiet
+                    poisoned = True
+                else:
+                    self.error(E_TYPE_MISMATCH,
+                               f"expected {subst(pt, sub)!r}, found {at!r}", a.span)
+        if poisoned or self._subst_poisoned(sub):
+            return ERROR                   # suppress the expected-type unify and the infer loop
         if expected is not None:
             self._unify(fty.ret, expected, sub)
         for name in self._tyvar_names(fty):
@@ -200,6 +237,10 @@ class _Checker:
         for v in edef.variants:
             if v.name in self.variant_index:
                 self.error(E_DUP_VARIANT, f"duplicate variant name '{v.name}'", d.span)
+            elif v.name in self.fn_names or v.name in self.struct_names:   # §2.7: one namespace
+                self.error(E_DUPLICATE,
+                           f"variant '{v.name}' conflicts with an existing function or struct",
+                           d.span)
             self.variant_index[v.name] = (d.name, v.tag)
 
     def hoist_fn(self, d: A.FnDecl, scope: Scope) -> None:
@@ -210,13 +251,10 @@ class _Checker:
         ret_ty = self._resolve_type(d.ret) if d.ret is not None else UNIT
         self.type_params = saved
         d.fn_ty = FnT(param_tys, ret_ty)
-        if d.name in _RESERVED:
-            self.error(E_INTRINSIC_NOT_VALUE, f"cannot rebind intrinsic '{d.name}'", d.span)
-        prior = scope.local(d.name)
-        if prior is not None and not scope.repl:
-            self.error(E_DUPLICATE, f"duplicate definition of '{d.name}'", d.span,
-                       hint=f"previously defined at line {prior.decl_span.line}")
-        info = scope.declare(d.name, d.fn_ty, False, d.span, generic=bool(d.type_params))
+        if d.name in self.struct_names or d.name in self.enum_names:   # §2.7: one namespace
+            self.error(E_DUPLICATE, f"'{d.name}' conflicts with an existing type", d.span)
+        info = self._declare_checked(scope, d.name, d.fn_ty, False, d.span,
+                                     generic=bool(d.type_params))
         d.res = info.resolution()
         if d.name == "main" and not d.type_params and d.fn_ty == FnT((), UNIT):
             self.main_slot = info.slot
@@ -226,6 +264,11 @@ class _Checker:
                 or d.name in self.enum_names:
             self.error(E_DUPLICATE, f"duplicate definition of type '{d.name}'", d.span)
         saved = self._enter_type_params(d.type_params, d.span)   # fields may reference T (M9b)
+        seen: set[str] = set()
+        for f in d.fields:
+            if f.name in seen:
+                self.error(E_DUPLICATE, f"duplicate field '{f.name}'", d.span)
+            seen.add(f.name)
         fields = tuple((f.name, self._resolve_type(f.annotation)) for f in d.fields)
         self.type_params = saved
         self.structs[d.name] = StructDef(d.name, tuple(d.type_params), fields)
@@ -243,7 +286,7 @@ class _Checker:
         saved_tps = self._enter_type_params(d.type_params, d.span, report=False)
         fn_scope = scope.child_frame("local")
         for p, pty in zip(d.params, d.fn_ty.params):
-            fn_scope.declare(p.name, pty, False, p.span)
+            self._declare_checked(fn_scope, p.name, pty, False, p.span)
         saved = self.loop_depth
         self.loop_depth = 0
         self.ret_stack.append(d.fn_ty.ret)
@@ -325,6 +368,21 @@ class _Checker:
         else:  # pragma: no cover
             raise AssertionError(f"checker: unexpected statement {type(s).__name__}")
 
+    def _declare_checked(self, scope: Scope, name: str, ty: Type, mutable: bool, span: Span,
+                         *, generic: bool = False):
+        """Declare a value binding, enforcing name hygiene (§2.2/§2.7): prelude/reserved names
+        are unshadowable, imported module names may not be re-bound, and a name may not be
+        declared twice in the same scope (REPL module scope excepted)."""
+        if name in _RESERVED or name in _PRELUDE_NAMES:
+            self.error(E_INTRINSIC_NOT_VALUE, f"cannot rebind prelude name '{name}'", span)
+        if name in self.module_names:
+            self.error(E_DUPLICATE, f"'{name}' conflicts with imported module '{name}'", span)
+        prior = scope.local(name)
+        if prior is not None and not scope.repl:
+            self.error(E_DUPLICATE, f"duplicate definition of '{name}'", span,
+                       hint=f"previously defined at line {prior.decl_span.line}")
+        return scope.declare(name, ty, mutable, span, generic=generic)
+
     def _let(self, s: A.Let, scope: Scope) -> None:
         if s.annotation is not None:
             declared = self._resolve_type(s.annotation)
@@ -332,13 +390,7 @@ class _Checker:
             ty = declared
         else:
             ty = self.synth(s.value, scope)
-        if s.name in _RESERVED:
-            self.error(E_INTRINSIC_NOT_VALUE, f"cannot rebind intrinsic '{s.name}'", s.span)
-        prior = scope.local(s.name)
-        if prior is not None and not scope.repl:
-            self.error(E_DUPLICATE, f"duplicate definition of '{s.name}'", s.span,
-                       hint=f"previously defined at line {prior.decl_span.line}")
-        s.res = scope.declare(s.name, ty, s.mutable, s.span).resolution()
+        s.res = self._declare_checked(scope, s.name, ty, s.mutable, s.span).resolution()
 
     def _assign(self, s: A.Assign, scope: Scope) -> None:
         info = scope.lookup(s.name)
@@ -381,6 +433,13 @@ class _Checker:
                 self.synth(s.value, scope)
             return
         R = self.ret_stack[-1]
+        if R is _INFER:
+            self.error(E_QUESTION,
+                       "'return' inside a lambda without a return-type annotation; add '-> T'",
+                       s.span)
+            if s.value is not None:
+                self.synth(s.value, scope)
+            return
         if s.value is not None:
             self.check_expr(s.value, R, scope)
         elif R is not ERROR and R != UNIT:
@@ -418,16 +477,20 @@ class _Checker:
             if len(self.enums[enum_name].variants[tag].payload) == 0:
                 self.require(self._nullary_variant(expr, scope, expected), expected, expr.span)
                 return
-        if isinstance(expr, A.ListLit) and not expr.elems and isinstance(expected, ListT):
+        if isinstance(expr, A.ListLit) and isinstance(expected, ListT):
+            if expr.elems:                     # flow the element type into every element
+                for x in expr.elems:
+                    self.check_expr(x, expected.elem, scope)
             expr.ty = expected                 # empty list gets its element type from context
             return
-        if isinstance(expr, A.IfExpr):         # flow `expected` into each branch (inference)
-            for cond, _ in expr.branches:
-                self._condition(cond, scope)
-            for _, v in expr.branches:
-                self.check_expr(v, expected, scope)
-            self.check_expr(expr.orelse, expected, scope)
+        if isinstance(expr, A.TupleLit) and isinstance(expected, TupleT) \
+                and len(expr.elems) == len(expected.items):
+            for x, ety in zip(expr.elems, expected.items):
+                self.check_expr(x, ety, scope)
             expr.ty = expected
+            return
+        if isinstance(expr, A.IfExpr):         # flow `expected` into each branch (inference)
+            self._if_expr(expr, scope, expected)
             return
         if isinstance(expr, A.Match):
             self._check_match(expr, scope, expected=expected, stmt_position=False)
@@ -451,6 +514,8 @@ class _Checker:
             return BOOL
         if isinstance(expr, A.StrLit):
             return STR
+        if isinstance(expr, A.UnitLit):
+            return UNIT
         if isinstance(expr, A.Name):
             return self._name(expr, scope)
         if isinstance(expr, A.Unary):
@@ -595,11 +660,21 @@ class _Checker:
                        f"'{e.op.symbol}' expects Bool operands, found {rt!r}", e.right.span)
         return BOOL
 
-    def _if_expr(self, e: A.IfExpr, scope: Scope) -> Type:
+    def _if_expr(self, e: A.IfExpr, scope: Scope, expected: Type | None = None) -> Type:
+        """An if-expression: branch bodies are blocks-as-values (§2.6) — statements
+        followed by a tail expression, checked with the match-arm machinery so
+        expected-type flow and divergent (return/break/continue) branches behave
+        exactly like match arms."""
         for cond, _ in e.branches:
             self._condition(cond, scope)
-        types = [self.synth(v, scope) for _, v in e.branches]
-        types.append(self.synth(e.orelse, scope))
+        types: list[Type] = []
+        for _, body in e.branches:
+            t = self._arm_value(body, scope.child(), False, expected)
+            if t is not None:
+                types.append(t)
+        t = self._arm_value(e.orelse, scope.child(), False, expected)
+        if t is not None:
+            types.append(t)
         result: Type | None = None
         for t in types:
             if t is ERROR:
@@ -610,14 +685,21 @@ class _Checker:
                 self.error(E_TYPE_MISMATCH,
                            f"if-expression branches must have the same type, "
                            f"found {result!r} and {t!r}", e.span)
+                e.ty = ERROR
                 return ERROR
-        return result if result is not None else ERROR
+        if result is not None:
+            e.ty = result
+        elif types:                    # every branch errored
+            e.ty = ERROR
+        else:                          # every branch diverges (return/break/continue)
+            e.ty = expected if expected is not None else UNIT
+        return e.ty
 
     def _lambda(self, e: A.Lambda, scope: Scope) -> Type:
         fn_scope = scope.child_frame("local")
         param_tys = tuple(self._resolve_type(p.annotation) for p in e.params)
         for p, pty in zip(e.params, param_tys):
-            fn_scope.declare(p.name, pty, False, p.span)
+            self._declare_checked(fn_scope, p.name, pty, False, p.span)
         saved = self.loop_depth
         self.loop_depth = 0
         if e.ret is not None:
@@ -626,7 +708,12 @@ class _Checker:
             self._check_fn_body(e.body, fn_scope, ret, e.span)
             self.ret_stack.pop()
         elif len(e.body) == 1 and isinstance(e.body[0], A.ExprStmt):
-            ret = self.synth(e.body[0].expr, fn_scope)   # inline body: infer from the expression
+            # inline body: infer from the expression. `_INFER` marks the return frame so
+            # `?`/`return` inside it are rejected (the inferred type is not known yet — letting
+            # them through would leak an error value as the success payload).
+            self.ret_stack.append(_INFER)
+            ret = self.synth(e.body[0].expr, fn_scope)
+            self.ret_stack.pop()
         else:
             self.error(E_UNSUPPORTED,
                        "a lambda with a block body needs a return-type annotation ('-> T')", e.span)
@@ -660,6 +747,10 @@ class _Checker:
                 self.synth(a, scope)
             return UNIT
         fty = self.synth(e.func, scope)
+        if isinstance(fty, FnT) and len(e.args) == len(fty.params):
+            for a, pty in zip(e.args, fty.params):   # flow the param type into each argument
+                self.check_expr(a, pty, scope)
+            return fty.ret
         for a in e.args:
             self.synth(a, scope)
         if fty is ERROR:
@@ -667,12 +758,8 @@ class _Checker:
         if not isinstance(fty, FnT):
             self.error(E_NOT_CALLABLE, f"{fty!r} is not callable", e.func.span)
             return ERROR
-        if len(e.args) != len(fty.params):
-            self.error(E_ARITY,
-                       f"expected {len(fty.params)} argument(s), got {len(e.args)}", e.span)
-        else:
-            for a, pty in zip(e.args, fty.params):
-                self.require(a.ty, pty, a.span)
+        self.error(E_ARITY,
+                   f"expected {len(fty.params)} argument(s), got {len(e.args)}", e.span)
         return fty.ret
 
     # -- types ---------------------------------------------------------------
@@ -849,19 +936,31 @@ class _Checker:
                      stmt_position: bool) -> Type:
         m.stmt_position = stmt_position
         S = self.synth(m.scrutinee, scope)
+        if isinstance(S, EnumT) and S.name not in self.enums:
+            # an enum type imported from another module: its definition (variants/tags) is not
+            # in this checker's registry — cross-module enum match is deferred post-v1 (§7 M8)
+            self.error(E_UNSUPPORTED,
+                       f"cannot match on foreign enum type '{S.name}' "
+                       f"(cross-module enums are not supported in v1)", m.scrutinee.span)
+            S = ERROR
         m.scrut_slot = self._temp(scope)
         rows: list = []
         arm_types: list[Type] = []
+        had_pattern_error = False
         for arm in m.arms:
             arm_scope = scope.child()
+            n = len(self.errors)
             sp = self._check_pattern(arm.pattern, S, m.scrut_slot, arm_scope)
-            if not exhaustive.is_useful(rows, [sp], exhaustive.sort_of(S), self.enums):
-                self.error(E_UNREACHABLE, "unreachable match arm", arm.pattern.span)
-            rows.append([sp])
+            if len(self.errors) > n:                # a malformed pattern: don't cascade
+                had_pattern_error = True
+            else:
+                if not exhaustive.is_useful(rows, [sp], exhaustive.sort_of(S), self.enums):
+                    self.error(E_UNREACHABLE, "unreachable match arm", arm.pattern.span)
+                rows.append([sp])
             t = self._arm_value(arm.body, arm_scope, stmt_position, expected)
             if t is not None:
                 arm_types.append(t)
-        if S is not ERROR:                          # every match must be total (§2.7)
+        if S is not ERROR and not had_pattern_error:   # every match must be total (§2.7)
             witness = exhaustive.missing_witness(rows, exhaustive.sort_of(S), self.enums)
             if witness is not None:
                 label = S.name if isinstance(S, EnumT) else repr(S)
@@ -925,11 +1024,8 @@ class _Checker:
                 payload = self._chan_payload(self.synth(arm.chan, scope), arm.chan.span, "recv")
                 opt_ty = EnumT("Option", (payload,)) if payload is not ERROR else ERROR
                 if arm.binder is not None:
-                    if arm.binder in _RESERVED:
-                        self.error(E_INTRINSIC_NOT_VALUE,
-                                   f"cannot rebind intrinsic '{arm.binder}'", arm.span)
-                    arm.binder_res = arm_scope.declare(
-                        arm.binder, opt_ty, False, arm.span).resolution()
+                    arm.binder_res = self._declare_checked(
+                        arm_scope, arm.binder, opt_ty, False, arm.span).resolution()
             elif arm.kind == "send":
                 payload = self._chan_payload(self.synth(arm.chan, scope), arm.chan.span, "send")
                 if payload is not ERROR:
@@ -957,6 +1053,25 @@ class _Checker:
         sel.ty = result if result is not None else UNIT
         return sel.ty
 
+    def _bind_error_binders(self, pat: A.Pattern, scope: Scope) -> None:
+        """After a malformed constructor/tuple pattern, still bind every identifier binder
+        (with type ERROR) so the arm body sees the names and doesn't cascade into E0111.
+        Respects the prelude-name guard; nested variant/tuple sub-patterns are walked too."""
+        if isinstance(pat, A.PIdent):
+            if pat.name in self.variant_index:              # a nullary-variant reference, not a binder
+                return
+            if pat.name in _RESERVED or pat.name in _PRELUDE_NAMES:
+                return
+            fslot = self._temp(scope)
+            slot = fslot.index if isinstance(fslot, Global) else fslot.slot
+            pat.resolved = scope.declare_at(pat.name, ERROR, slot, pat.span).resolution()
+        elif isinstance(pat, A.PVariant):
+            for arg in pat.args:
+                self._bind_error_binders(arg, scope)
+        elif isinstance(pat, A.PTuple):
+            for sub in pat.elems:
+                self._bind_error_binders(sub, scope)
+
     def _check_pattern(self, pat: A.Pattern, ty: Type, value_res, scope: Scope):
         if isinstance(pat, A.PWildcard):
             return exhaustive.WILD
@@ -983,6 +1098,9 @@ class _Checker:
                     return exhaustive.WILD
                 pat.resolved = VariantRes(enum_name, pat.name, tag, 0)
                 return exhaustive.Ctor(tag, [])
+            if pat.name in _RESERVED or pat.name in _PRELUDE_NAMES:
+                self.error(E_INTRINSIC_NOT_VALUE,
+                           f"cannot rebind prelude name '{pat.name}'", pat.span)
             slot = value_res.index if isinstance(value_res, Global) else value_res.slot
             pat.resolved = scope.declare_at(pat.name, ty, slot, pat.span).resolution()
             return exhaustive.WILD
@@ -990,6 +1108,7 @@ class _Checker:
             if not isinstance(ty, EnumT) or pat.name not in self.variant_index \
                     or self.variant_index[pat.name][0] != ty.name:
                 self.error(E_NOT_A_VARIANT, f"'{pat.name}' is not a variant of {ty!r}", pat.span)
+                self._bind_error_binders(pat, scope)        # bind sub-binders so the body is quiet
                 return exhaustive.WILD
             enum_name, tag = self.variant_index[pat.name]
             edef = self.enums[enum_name]
@@ -999,6 +1118,7 @@ class _Checker:
                 self.error(E_VARIANT_ARITY,
                            f"variant '{pat.name}' expects {len(vdef.payload)} argument(s), "
                            f"got {len(pat.args)}", pat.span)
+                self._bind_error_binders(pat, scope)        # bind sub-binders so the body is quiet
                 return exhaustive.WILD
             mapping = dict(zip(edef.type_params, ty.args))
             subs = []
@@ -1012,6 +1132,7 @@ class _Checker:
         if isinstance(pat, A.PTuple):
             if not isinstance(ty, TupleT) or len(ty.items) != len(pat.elems):
                 self.error(E_TYPE_MISMATCH, f"tuple pattern does not match {ty!r}", pat.span)
+                self._bind_error_binders(pat, scope)        # bind sub-binders so the body is quiet
                 return exhaustive.WILD
             subs = []
             field_slots = []
@@ -1030,8 +1151,8 @@ class _Checker:
             self.error(E_EMPTY_LIST, "cannot infer element type of []; add an annotation", e.span)
             return ListT(ERROR)
         elem = self.synth(e.elems[0], scope)
-        for x in e.elems[1:]:
-            self.require(self.synth(x, scope), elem, x.span)
+        for x in e.elems[1:]:                    # flow the head's type into the tail elements
+            self.check_expr(x, elem, scope)
         return ListT(elem)
 
     def _index(self, e: A.Index, scope: Scope) -> Type:
@@ -1052,7 +1173,13 @@ class _Checker:
                 and scope.lookup(e.obj.ident) is None):
             mod = self.imports.get(e.obj.ident, {})
             if e.name in mod:
-                slot, ty = mod[e.name]
+                slot, ty, mutable = mod[e.name]
+                if mutable:                                          # §4.1: no shared mutable state
+                    self.error(E_VAR_CAPTURE,
+                               f"cannot access mutable binding '{e.obj.ident}.{e.name}' "
+                               f"from another module", e.span)
+                    e.res = ERROR_RES
+                    return ERROR
                 if isinstance(ty, FnT) and self._has_typevar(ty):    # generic fn: call-only (M9b)
                     self.error(E_GENERIC_NOT_VALUE,
                                f"generic function '{e.obj.ident}.{e.name}' is not a first-class value",
@@ -1091,7 +1218,7 @@ class _Checker:
             self.error(E_TYPE_MISMATCH, f"'for' expects a List, found {it_ty!r}", s.iterable.span)
         s.hidden = (self._temp(scope), self._temp(scope), self._temp(scope))   # xs, i, n temps
         child = scope.child()
-        s.var_slot = child.declare(s.var, elem, False, s.span).resolution()    # immutable loop var
+        s.var_slot = self._declare_checked(child, s.var, elem, False, s.span).resolution()
         self.loop_depth += 1
         for st in s.body:
             self.stmt(st, child)
@@ -1112,8 +1239,16 @@ class _Checker:
                 self.error(E_TYPE_MISMATCH,
                            f"cannot destructure {vty!r} into {len(s.names)} names", s.span)
             elems = [ERROR] * len(s.names)
-        s.res_list = [scope.declare(n, t, False, s.span).resolution()
-                      for n, t in zip(s.names, elems)]
+        seen: set[str] = set()
+        res_list = []
+        for n, t in zip(s.names, elems):
+            if n in seen:
+                self.error(E_DUPLICATE, f"duplicate name '{n}' in tuple binding", s.span)
+                res_list.append(scope.declare(n, t, False, s.span).resolution())
+            else:
+                seen.add(n)
+                res_list.append(self._declare_checked(scope, n, t, False, s.span).resolution())
+        s.res_list = res_list
 
     def _construct_struct(self, e: A.Call, scope: Scope, expected: Type | None = None) -> Type:
         sdef = self.structs[e.func.ident]
@@ -1152,6 +1287,10 @@ class _Checker:
             return ERROR
         if not self.ret_stack:
             self.error(E_QUESTION, "'?' is only valid inside a function", e.span)
+            return ERROR
+        if self.ret_stack[-1] is _INFER:
+            self.error(E_QUESTION,
+                       "'?' inside a lambda without a return-type annotation; add '-> T'", e.span)
             return ERROR
         R = self.ret_stack[-1]
         if isinstance(t, EnumT) and t.name == "Result":
@@ -1230,7 +1369,15 @@ class _Checker:
                            f"cannot spawn '{name}'; spawn a user-defined function or lambda", s.span)
                 return
         fty = self.synth(t.func, scope)
-        arg_tys = [self.synth(a, scope) for a in t.args]
+        if isinstance(fty, FnT) and len(t.args) == len(fty.params):
+            if fty.ret is not ERROR and fty.ret != UNIT:
+                self.error(E_TYPE_MISMATCH,
+                           f"a spawned function must return Unit, not {fty.ret!r}", s.span)
+            for a, pty in zip(t.args, fty.params):   # flow the param type into each argument
+                self.check_expr(a, pty, scope)
+            return
+        for a in t.args:
+            self.synth(a, scope)
         if not isinstance(fty, FnT):
             if fty is not ERROR:
                 self.error(E_NOT_CALLABLE, "spawn target is not a function", t.func.span)
@@ -1238,12 +1385,8 @@ class _Checker:
         if fty.ret is not ERROR and fty.ret != UNIT:
             self.error(E_TYPE_MISMATCH,
                        f"a spawned function must return Unit, not {fty.ret!r}", s.span)
-        if len(t.args) != len(fty.params):
-            self.error(E_ARITY,
-                       f"expected {len(fty.params)} argument(s), got {len(t.args)}", s.span)
-        else:
-            for a, pty in zip(t.args, fty.params):
-                self.require(a.ty, pty, a.span)
+        self.error(E_ARITY,
+                   f"expected {len(fty.params)} argument(s), got {len(t.args)}", s.span)
 
 
 def check(module: A.Module, module_scope: Scope | None = None,
@@ -1274,6 +1417,8 @@ def check(module: A.Module, module_scope: Scope | None = None,
         elif isinstance(d, A.StructDecl):
             c.struct_names.add(d.name)
             c.struct_params[d.name] = tuple(d.type_params)
+        elif isinstance(d, A.FnDecl):
+            c.fn_names.add(d.name)
     for d in module.decls:
         if isinstance(d, A.EnumDecl):
             c.register_enum(d)
@@ -1291,5 +1436,6 @@ def check(module: A.Module, module_scope: Scope | None = None,
     module.n_globals = scope.root.counter
     module.main_slot = c.main_slot
     # export this module's top-level value bindings for importers: name -> (slot, type)
-    module.symbols = {name: (info.slot, info.ty) for name, info in scope.names.items()}
+    module.symbols = {name: (info.slot, info.ty, info.mutable)
+                      for name, info in scope.names.items()}
     return module

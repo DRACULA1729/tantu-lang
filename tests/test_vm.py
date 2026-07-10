@@ -64,3 +64,116 @@ def test_calling_a_non_callable_raises_vmerror():
     code = _code([Instr(Op.LOAD_CONST, 0), Instr(Op.CALL, 0), Instr(Op.HALT)], [42])
     with pytest.raises(VMError):
         VM(stdout=io.StringIO()).run(code, "", "<t>")
+
+
+# -- W5: builtin panic boundary + total builtins (full pipeline via the golden harness) -------
+
+from harness import run_capture
+from weft.values import render
+
+
+def test_split_empty_separator_returns_chars():
+    out, err, code = run_capture('print(split("abc", ""))', "split.weft")
+    assert err == ""
+    assert (out, code) == ('["a", "b", "c"]\n', 0)
+
+
+def test_float_overflow_returns_inf():
+    # DESIGN §2.3: Float overflow is inf, a legal value — not a host OverflowError.
+    out, err, code = run_capture(f"print(float({10 ** 500}))", "big.weft")
+    assert err == ""
+    assert (out, code) == ("inf\n", 0)
+
+
+def test_trunc_inf_panics_r009():
+    out, err, code = run_capture("print(trunc(1.0e300 * 1.0e300))", "inf.weft")
+    assert code == 1
+    assert err == ""
+    assert "panic [R009]" in out and "trunc" in out
+    assert "^" in out                       # caret'd panic trace, not a raw traceback
+    assert "Traceback" not in out
+
+
+def test_trunc_nan_panics_r009():
+    out, err, code = run_capture("print(trunc(0.0 * (1.0e300 * 1.0e300)))", "nan.weft")
+    assert code == 1
+    assert err == ""
+    assert "panic [R009]" in out and "nan" in out and "^" in out
+    assert "Traceback" not in out
+
+
+# -- W6: iterative render() — deep values must not blow Python's recursion limit -------------
+
+
+def test_render_deep_recursive_value():
+    src = (
+        "enum L:\n"
+        "    Nil\n"
+        "    Cons(Int, L)\n"
+        "\n"
+        "fn main() -> Unit:\n"
+        "    var xs: L = Nil\n"
+        "    var i = 0\n"
+        "    while i < 5000:\n"
+        "        xs = Cons(i, xs)\n"
+        "        i = i + 1\n"
+        "    print(xs)\n"
+    )
+    out, err, code = run_capture(src, "deep.weft")
+    assert err == ""
+    assert code == 0
+    assert out.startswith("Cons(4999, Cons(4998, ")
+    assert out.count("Cons(") == 5000
+    assert out.endswith("Cons(0, Nil" + ")" * 5000 + "\n")
+
+
+def test_render_deep_python_value_direct():
+    v: object = 1
+    for _ in range(5000):
+        v = [v]
+    assert render(v) == "[" * 5000 + "1" + "]" * 5000
+
+
+# -- W17: Weft call-depth cap (R010) + truncated panic trace ---------------------------------
+
+from weft.cli import compile_source
+
+_RUNAWAY = "fn f(n: Int) -> Int:\n    return f(n + 1)\n\nfn main() -> Unit:\n    print(f(0))\n"
+
+
+def test_runaway_recursion_panics_r010_with_truncated_trace():
+    out, err, code = run_capture(_RUNAWAY, "so.weft")
+    assert code == 1
+    assert err == ""
+    assert "panic [R010]" in out and "call stack overflow (100000 frames)" in out
+    assert "more frames" in out                  # the truncation marker
+    assert len(out.splitlines()) < 100           # ~20 frames rendered, not 100k
+    assert "Traceback" not in out
+
+
+def test_max_frames_is_a_ctor_param():
+    code = compile_source(_RUNAWAY, "so2.weft")
+    out = io.StringIO()
+    rc = VM(stdout=out, max_frames=50).run(code, _RUNAWAY, "so2.weft")
+    assert rc == 1
+    assert "call stack overflow (50 frames)" in out.getvalue()
+
+
+def test_deep_but_legal_recursion_still_succeeds():
+    # 50k frames sits well under the 100k default cap — deep-but-legal recursion must work.
+    src = ("fn f(n: Int) -> Int:\n    if n == 0:\n        return 0\n    return f(n - 1) + 1\n\n"
+           "fn main() -> Unit:\n    print(f(50000))\n")
+    out, err, code = run_capture(src, "deep_rec.weft")
+    assert (err, code) == ("", 0)
+    assert out == "50000\n"
+
+
+# -- W18: negative channel capacity (R011) ----------------------------------------------------
+
+
+def test_negative_channel_capacity_panics_r011():
+    out, err, code = run_capture(
+        "fn main() -> Unit:\n    let c = chan[Int](-5)\n    send(c, 1)\n", "nc.weft")
+    assert code == 1
+    assert err == ""
+    assert "panic [R011]" in out and "channel capacity cannot be negative (-5)" in out

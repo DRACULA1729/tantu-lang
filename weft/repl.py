@@ -3,9 +3,13 @@
 A `_Session` holds a persistent module scope and a growing global table, so bindings survive
 across inputs (Fable ruling 1b). Each input is checked in a fresh child scope over the
 session root and only committed to the session on success — a failed input never corrupts
-session state. A trailing bare expression is echoed. A line ending in ':' or with unclosed
-brackets continues until a blank line. Errors render inline; Ctrl-D (EOF) exits 0. Driven
-with (stdin, stdout) so tests can supply StringIO.
+session state. A trailing bare expression is echoed.
+
+Multi-line rule (§6.4): the decision to ENTER continuation is made once, on the FIRST
+line — a (comment-stripped) line ending in ':' or a line with unclosed brackets. Once in
+continuation mode, lines are read until a blank line (or EOF) submits the whole buffer.
+Errors render inline; Ctrl-D (EOF) exits 0. Driven with (stdin, stdout) so tests can
+supply StringIO.
 """
 
 from __future__ import annotations
@@ -38,13 +42,13 @@ class _Session:
         self.vm.run(code, src, "<repl>", globals=self.globals)
 
 
-def _needs_continuation(buf: str) -> bool:
-    if buf.rstrip().endswith(":"):
-        return True
-    depth = 0
+def _strip_comment(line: str) -> str:
+    """Cut a trailing '# ...' comment, string-aware: a '#' inside a string literal is not
+    a comment. Mirrors the lexer's string rules (lexer._string / _skip_comment): strings
+    are double-quoted, single-line, with backslash escapes."""
     in_str = False
     esc = False
-    for ch in buf:
+    for i, ch in enumerate(line):
         if in_str:
             if esc:
                 esc = False
@@ -55,9 +59,45 @@ def _needs_continuation(buf: str) -> bool:
             continue
         if ch == '"':
             in_str = True
-        elif ch in "([":
+        elif ch == "#":
+            return line[:i]
+    return line
+
+
+def _opens_block(text: str) -> bool:
+    """A block header: a (comment-stripped) line ending in ':' — fn/if/match/for/while/
+    enum/struct/select etc."""
+    return text.rstrip().endswith(":")
+
+
+def _open_brackets(buf: str) -> bool:
+    """True if buf has more unclosed (/[/{ than closers, ignoring brackets inside string
+    literals and comments (same string rules as _strip_comment; strings and comments both
+    end at a newline, per the lexer)."""
+    depth = 0
+    in_str = False
+    esc = False
+    in_comment = False
+    for ch in buf:
+        if in_comment:
+            if ch == "\n":
+                in_comment = False
+            continue
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"' or ch == "\n":  # strings are single-line in v1
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "#":
+            in_comment = True
+        elif ch in "([{":
             depth += 1
-        elif ch in ")]":
+        elif ch in ")]}":
             depth = max(0, depth - 1)
     return depth > 0
 
@@ -66,25 +106,41 @@ def repl(stdin, stdout) -> int:
     stdout.write(f"weft {__version__} REPL — Ctrl-D to exit\n")
     session = _Session(stdout)
     while True:
-        stdout.write(">>> ")
-        stdout.flush()
-        line = stdin.readline()
-        if line == "":  # EOF
-            stdout.write("\n")
-            return 0
-        buf = line
-        while _needs_continuation(buf):
-            stdout.write("... ")
-            stdout.flush()
-            cont = stdin.readline()
-            if cont == "":
-                break
-            buf += cont
-        if buf.strip() == "":
-            continue
         try:
-            session.run_input(buf)
-        except CheckErrors as e:
-            stdout.write(render_errors(buf, e.errors) + "\n")
-        except WeftError as e:
-            stdout.write(render_error(buf, e) + "\n")
+            stdout.write(">>> ")
+            stdout.flush()
+            line = stdin.readline()
+            if line == "":  # EOF
+                stdout.write("\n")
+                return 0
+            if line.startswith("﻿"):   # strip a pasted leading BOM
+                line = line[1:]
+            line = line.replace("\r\n", "\n").replace("\r", "\n")   # CRLF/CR → LF (piped scripts)
+            buf = line
+            # §6.4: the continuation decision is made ONCE, on the first line. In
+            # continuation mode a blank line (or EOF) submits the whole buffer.
+            if _opens_block(_strip_comment(line)) or _open_brackets(buf):
+                while True:
+                    stdout.write("... ")
+                    stdout.flush()
+                    cont = stdin.readline()
+                    if cont == "" or cont.strip() == "":
+                        break
+                    buf += cont.replace("\r\n", "\n").replace("\r", "\n")   # CRLF/CR → LF
+            if buf.strip() == "":
+                continue
+            try:
+                session.run_input(buf)
+            except CheckErrors as e:
+                stdout.write(render_errors(buf, e.errors) + "\n")
+            except WeftError as e:
+                stdout.write(render_error(buf, e) + "\n")
+        except KeyboardInterrupt:           # Ctrl-C: abandon the current line, keep the session
+            stdout.write("\nKeyboardInterrupt\n")
+            continue
+        except BrokenPipeError:             # stdout consumer went away: exit the loop, don't busy-spin
+            return 141
+        except Exception as e:              # catch-all boundary: the session must never die (W1)
+            stdout.write(f"weft: internal error: {type(e).__name__}: {e}\n"
+                         "  this is a bug in weft — please report it\n")
+            continue

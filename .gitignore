@@ -20,3 +20,14 @@ tests/**/*.actual
 # OS / editor noise
 .DS_Store
 *.swp
+
+# Old prototype dirs — never commit
+/Interpreter/
+/Final/
+/test compiler/
+gpt_chat_links.txt
+
+# Build / packaging / coverage artifacts
+/build/
+weft.egg-info/
+.coverage

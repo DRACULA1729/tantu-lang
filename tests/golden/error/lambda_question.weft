@@ -1,0 +1,7 @@
+fn get() -> Result[Int, Str]:
+    Err("boom")
+
+fn outer() -> Result[Int, Str]:
+    let f = fn(): get()?
+    let x = f()
+    Ok(x)

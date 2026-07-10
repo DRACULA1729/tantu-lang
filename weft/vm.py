@@ -21,12 +21,15 @@ from weft.bytecode import Op, Code
 from weft.errors import (
     Span, WeftPanic, render_panic, render_span,
     R_DIV_BY_ZERO, R_UNINIT, R_MATCH_FAIL, R_INDEX_OUT_OF_RANGE,
-    R_SEND_CLOSED, R_CLOSE_CLOSED, R_DEADLOCK, R_STEP_LIMIT,
+    R_SEND_CLOSED, R_CLOSE_CLOSED, R_DEADLOCK, R_STEP_LIMIT, R_BUILTIN,
+    R_STACK_OVERFLOW, R_BAD_CAP,
 )
 from weft.values import render, Closure, Builtin, Variant, Record, Channel
 from weft.prelude import builtin_impls
 
 _UNINIT = object()   # sentinel for an unread global/local slot (checker guarantees def-before-use)
+
+_TRACE_FRAMES = 20   # panic traces render at most this many innermost frames (then a count)
 
 
 class _Sig(enum.Enum):
@@ -50,13 +53,16 @@ _NONE = Variant(1, "Option", "None", ())
 
 
 class _SelectGroup:
-    """Shared state for one `select` that parked: `won` flips true when any arm fires, so the
-    waiters this select left on the OTHER channels become tombstones (M9a)."""
+    """Shared state for one `select` that parked: `won` flips true when any arm fires. `entries`
+    records `(wait_deque, waiter)` per registered arm so a winning arm can eagerly dequeue its
+    siblings from the other channels (`_cancel_select`); the lazy tombstone skim in the pop-live
+    paths remains as a second line of defense (M9a)."""
 
-    __slots__ = ("won",)
+    __slots__ = ("won", "entries")
 
     def __init__(self) -> None:
         self.won = False
+        self.entries: list = []      # list[tuple[deque, _SelectWaiter]]
 
 
 class _SelectWaiter:
@@ -101,8 +107,10 @@ class Fiber:
 
 class VM:
     def __init__(self, budget: int = 1000, stdout=None,
-                 clock=time.monotonic, sleep_fn=time.sleep) -> None:
+                 clock=time.monotonic, sleep_fn=time.sleep,
+                 max_frames: int = 100000) -> None:
         self.budget = budget
+        self.max_frames = max_frames            # Weft call-stack depth cap (R010 on overflow)
         self.stdout = stdout if stdout is not None else sys.stdout
         self.clock = clock                       # injected; tests use a virtual clock
         self.sleep_fn = sleep_fn                 # injected idle sleep
@@ -136,11 +144,11 @@ class VM:
         self.ready: deque[Fiber] = deque()
         self.timers: list = []          # heap of (wake_at, seq, fiber)
         self.seq = 1                    # monotonic: spawned fids AND timer tie-breaks (main = 0)
-        self.registry: list[Fiber] = []
+        self.registry: dict[int, Fiber] = {}    # fid -> live fiber; DONE fibers are pruned (O(1))
         self.current: Fiber | None = None
 
         main = Fiber(0, Frame(module_code))
-        self.registry.append(main)
+        self.registry[main.fid] = main
         self.ready.append(main)
         try:
             while True:
@@ -153,7 +161,7 @@ class VM:
                     if self.timers:
                         self.sleep_fn(max(0.0, self.timers[0][0] - self.clock()))
                         continue
-                    parked = [f for f in self.registry if f.state is State.PARKED]
+                    parked = [f for f in self.registry.values() if f.state is State.PARKED]
                     if parked:
                         self._render_deadlock(parked)
                         return 1
@@ -171,10 +179,15 @@ class VM:
                     fib.state = State.PARKED
                 else:  # DONE
                     fib.state = State.DONE
+                    self.registry.pop(fib.fid, None)     # prune: registry holds live fibers only
                     if fib.fid == 0:
                         return 0             # main done → program exits, other fibers dropped
         except WeftPanic as p:
-            self.stdout.write(render_panic(self.srcs, self._trace(self.current, p), p) + "\n")
+            trace = self._trace(self.current, p)
+            text = render_panic(self.srcs, trace[:_TRACE_FRAMES], p)
+            if len(trace) > _TRACE_FRAMES:   # runaway stacks: innermost frames + a count
+                text += f"\n  … {len(trace) - _TRACE_FRAMES} more frames"
+            self.stdout.write(text + "\n")
             return 1
 
     def _seq(self) -> int:
@@ -205,12 +218,24 @@ class VM:
                 return s
         return None
 
+    def _cancel_select(self, group: _SelectGroup) -> None:
+        """A select arm fired: mark the group won and eagerly dequeue its sibling waiters from
+        every channel they were registered on, so non-firing channels don't accumulate
+        tombstones (the lazy skim in the pop-live paths stays as a backstop)."""
+        group.won = True
+        for dq, w in group.entries:
+            try:
+                dq.remove(w)
+            except ValueError:
+                pass                             # already popped (e.g. the winning arm itself)
+        group.entries.clear()
+
     def _resolve_recv(self, r, value) -> None:
         """Deliver an Option `value` to a receiver record — plain fiber or select waiter."""
         if isinstance(r, Fiber):
             self._wake(r, value)                                 # plain recv: the Option itself
         else:
-            r.group.won = True
+            self._cancel_select(r.group)
             self._wake(r.fiber, (r.case_index, value))           # select: the dispatch pair
 
     def _resolve_send(self, s):
@@ -219,7 +244,7 @@ class VM:
             f, v = s
             self._wake(f, None)                                  # plain send: Unit
             return v
-        s.group.won = True
+        self._cancel_select(s.group)
         self._wake(s.fiber, (s.case_index, None))                # select send arm: Unit payload
         return s.value
 
@@ -317,6 +342,10 @@ class VM:
                 base = len(stack) - argc - 1
                 callee = stack[base]
                 if isinstance(callee, Closure):
+                    if len(fiber.frames) >= self.max_frames:
+                        raise WeftPanic(R_STACK_OVERFLOW,
+                                        f"call stack overflow ({self.max_frames} frames)",
+                                        frame.code.spans[frame.ip - 1])
                     code = callee.code
                     args = stack[base + 1:]
                     del stack[base:]
@@ -326,7 +355,16 @@ class VM:
                 elif isinstance(callee, Builtin):
                     args = stack[base + 1:]
                     del stack[base:]
-                    stack.append(self.builtins[callee.name](*args))
+                    # Panic boundary: a host exception inside a builtin becomes a clean
+                    # R009 panic at the call site instead of a raw Python traceback.
+                    try:
+                        result = self.builtins[callee.name](*args)
+                    except WeftPanic:
+                        raise
+                    except Exception as ex:
+                        raise WeftPanic(R_BUILTIN, f"{callee.name}: {ex}",
+                                        frame.code.spans[frame.ip - 1])
+                    stack.append(result)
                 else:
                     raise VMError(f"cannot call {type(callee).__name__}")
             elif op is Op.RETURN:
@@ -413,10 +451,15 @@ class VM:
                 code = clo.code
                 nf = Fiber(self._seq(), Frame(code, closure=clo, stack_base=0))
                 nf.frames[-1].locals = args + [_UNINIT] * (code.n_locals - argc)
-                self.registry.append(nf)
+                self.registry[nf.fid] = nf
                 self.ready.append(nf)          # queued; the acting fiber keeps running
             elif op is Op.CHAN_NEW:
-                stack.append(Channel(stack.pop()))
+                cap = stack.pop()
+                if cap < 0:
+                    raise WeftPanic(R_BAD_CAP,
+                                    f"channel capacity cannot be negative ({cap})",
+                                    frame.code.spans[frame.ip - 1])
+                stack.append(Channel(cap))
             elif op is Op.CHAN_SEND:
                 v = stack.pop(); c = stack.pop()
                 if c.closed:
@@ -466,7 +509,7 @@ class VM:
                     if isinstance(s, tuple):
                         sf = s[0]
                     elif not s.group.won:
-                        s.group.won = True
+                        self._cancel_select(s.group)
                         sf = s.fiber
                     else:
                         continue                          # tombstone: another arm already fired
@@ -527,7 +570,9 @@ class VM:
                     group = _SelectGroup()
                     for i, (k, c, v) in enumerate(arms):
                         waiter = _SelectWaiter(fiber, i, v, group)
-                        (c.recv_wait if k == 0 else c.send_wait).append(waiter)
+                        dq = c.recv_wait if k == 0 else c.send_wait
+                        dq.append(waiter)
+                        group.entries.append((dq, waiter))
                     return _Sig.PARKED
             elif op is Op.SELECT_DISPATCH:
                 idx, payload = stack.pop()

@@ -76,6 +76,30 @@ def _substring(s, i, j):
     return s[i:j]
 
 
+def _float(n):
+    # DESIGN §2.3: Float overflow yields inf, a legal value — never a host OverflowError.
+    try:
+        return float(n)
+    except OverflowError:
+        return math.inf
+
+
+def _trunc(x):
+    # nan/inf have no integer value; a clear ValueError here becomes an R009 panic
+    # (with span + trace) at the VM's builtin boundary.
+    if math.isnan(x) or math.isinf(x):
+        raise ValueError(f"cannot truncate {x!r} to Int")
+    return math.trunc(x)
+
+
+def _split(s, sep):
+    # Splitting on the empty separator is DEFINED as chars(s) (Python's str.split
+    # would raise); the VM's R009 boundary is only the fallback for true domain errors.
+    if sep == "":
+        return list(s)
+    return s.split(sep)
+
+
 def builtin_impls(render) -> dict:
     """Runtime implementations, keyed by name (the VM's builtin table). `render` is injected to
     avoid an import cycle with values."""
@@ -86,10 +110,10 @@ def builtin_impls(render) -> dict:
         "get":       _get,
         "concat":    lambda a, b: a + b,
         "range":     lambda a, b: list(range(a, b)),
-        "float":     lambda n: float(n),
-        "trunc":     lambda x: math.trunc(x),
+        "float":     _float,
+        "trunc":     _trunc,
         "parse_int": _parse_int,
-        "split":     lambda s, sep: s.split(sep),
+        "split":     _split,
         "substring": _substring,
         "chars":     lambda s: list(s),
     }
