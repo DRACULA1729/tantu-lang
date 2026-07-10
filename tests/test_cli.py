@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import select
 import signal
 import subprocess
 import sys
@@ -87,24 +88,60 @@ def test_deeply_nested_input_check_exits_2_cleanly():
     assert "Traceback" not in out
 
 
+# A looping program that first prints a marker, so the test can wait for the loop to be
+# genuinely running before signalling — a fixed sleep would flake on a slow CI runner if the
+# signal landed during Python startup (before weft's handler exists). Run with `-u` so the
+# marker flushes immediately (weft's VM print does not flush, and a PIPE is block-buffered).
+_LOOP_PROG = 'fn main():\n    print("running")\n    loop:\n        let x = 1\n\nmain()\n'
+
+
+def _spawn_looping_weft(prog_path):
+    return subprocess.Popen(
+        [sys.executable, "-u", "-m", "weft", "run", str(prog_path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+
+
+def _wait_for_marker(proc, timeout=10):
+    """Block until the child emits its startup marker line, so we know its SIGINT handler is
+    installed and the loop is running. Bounded by `timeout` to avoid hanging a stuck test."""
+    ready, _, _ = select.select([proc.stdout], [], [], timeout)
+    assert ready, "child did not emit its startup marker in time"
+    line = proc.stdout.readline()
+    assert b"running" in line, line
+
+
 def test_sigint_during_run_exits_130_without_traceback(tmp_path):
     """W20/blocker: Ctrl-C during `weft run` exits 130 with a clean one-line message,
     never a raw Python traceback. Popen is used directly so we deliver SIGINT ourselves
     after the program is genuinely looping forever."""
     prog = tmp_path / "loop.weft"
-    prog.write_text("fn main():\n    loop:\n        let x = 1\n\nmain()\n")
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "weft", "run", str(prog)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-    )
-    time.sleep(0.5)                     # let it enter the loop before signalling
+    prog.write_text(_LOOP_PROG)
+    proc = _spawn_looping_weft(prog)
+    _wait_for_marker(proc)              # loop is running and the handler is installed
     proc.send_signal(signal.SIGINT)
     out, err = proc.communicate(timeout=10)
     combined = (out + err).decode("utf-8", "replace")
     assert proc.returncode == 130, combined
     assert "Traceback" not in combined
     assert "interrupted" in err.decode("utf-8", "replace")
+
+
+def test_double_sigint_during_run_exits_130_without_traceback(tmp_path):
+    """A second Ctrl-C arriving during teardown must not resurface as a CPython
+    `threading._shutdown` traceback: the handler ignores SIGINT after the first hit."""
+    prog = tmp_path / "loop.weft"
+    prog.write_text(_LOOP_PROG)
+    proc = _spawn_looping_weft(prog)
+    _wait_for_marker(proc)
+    proc.send_signal(signal.SIGINT)
+    time.sleep(0.01)                    # 10ms later: land the 2nd during teardown
+    proc.send_signal(signal.SIGINT)
+    out, err = proc.communicate(timeout=10)
+    combined = (out + err).decode("utf-8", "replace")
+    assert proc.returncode == 130, combined
+    assert "Traceback" not in combined
 
 
 # --- in-process tests: drive main(argv) directly (W21) --------------------------------

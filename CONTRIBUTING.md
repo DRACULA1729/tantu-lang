@@ -24,8 +24,9 @@ The `weft/` package is a pipeline, one stage per module:
 lexer.py -> parser.py -> checker.py -> compiler.py -> vm.py
 ```
 
-`tokens.py`, `ast_nodes.py`, `wtypes.py`, `resolve.py`, and `values.py` hold the data types
-passed between stages. `exhaustive.py` is the match-exhaustiveness check, `linker.py` flattens
+`tokens.py`, `ast_nodes.py`, `wtypes.py`, `resolve.py`, `bytecode.py`, and `values.py` hold the
+data types passed between stages — `bytecode.py` defines the `Op` opcode set and `Instr`/`Code`
+the compiler emits and the VM executes. `exhaustive.py` is the match-exhaustiveness check, `linker.py` flattens
 multi-module programs, `prelude.py` defines the builtins, `errors.py` is the error hierarchy
 and the code registry, and `cli.py` / `repl.py` / `__main__.py` are the entry points.
 

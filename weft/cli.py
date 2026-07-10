@@ -11,6 +11,7 @@ in-process golden runner (tests/conftest.py) can drive them without a subprocess
 from __future__ import annotations
 
 import os
+import signal
 import sys
 
 from weft import __version__
@@ -231,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit:
         raise
     except KeyboardInterrupt:               # Ctrl-C during a command: clean exit, no traceback
+        signal.signal(signal.SIGINT, signal.SIG_IGN)   # a 2nd Ctrl-C during teardown must not crash
         sys.stderr.write("\nweft: interrupted\n")
         return 130
     except Exception as exc:                # catch-all boundary: no raw tracebacks (W1)

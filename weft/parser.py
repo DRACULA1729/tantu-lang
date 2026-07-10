@@ -26,7 +26,7 @@ _MAX_DEPTH = 100
 # Layout tokens carry no lexeme; name them plainly in diagnostics (W20).
 _LAYOUT_NAMES = {
     _TT.NEWLINE: "end of line",
-    _TT.INDENT: "an indented block",
+    _TT.INDENT: "indentation",
     _TT.DEDENT: "end of block",
 }
 
@@ -758,6 +758,10 @@ class _Parser:
         if self.match(_TT.ARROW):                    # function type
             ret = self._type()
             return A.FnTypeExpr(Span.merge(lp.span, ret.span), parts, ret)
+        if not parts:                                # `()` alone is not a type (only `() -> R` is)
+            raise ParseError(P_UNEXPECTED_TOKEN,
+                             "expected a type; for the unit type write 'Unit'",
+                             Span.merge(lp.span, rp.span))
         if len(parts) == 1:
             return parts[0]                          # parenthesized single type
         return A.TupleTypeExpr(Span.merge(lp.span, rp.span), parts)   # tuple type (arity >= 2)

@@ -218,3 +218,28 @@ def test_moderate_nesting_still_parses():
     # Well below the cap: legitimate nesting must not be rejected.
     src = "(" * 20 + "1" + ")" * 20 + "\n"
     parse(tokenize(src, "<t>"))  # must not raise
+
+
+def test_unexpected_indent_message_is_grammatical():
+    # Fix 4: layout name for INDENT is "indentation", not "an indented block".
+    with pytest.raises(ParseError) as e:
+        parse(tokenize("print(1)\n    print(2)\n", "<t>"))
+    assert e.value.code == P_UNEXPECTED_TOKEN
+    assert "unexpected indentation" in e.value.message
+    assert "an indented block" not in e.value.message
+
+
+def test_empty_parens_type_is_parse_error_with_unit_hint():
+    # Fix 6: `()` in type position is not a type; only `() -> R` is.
+    with pytest.raises(ParseError) as e:
+        parse(tokenize("let u: () = ()\n", "<t>"))
+    assert e.value.code == P_UNEXPECTED_TOKEN
+    assert "Unit" in e.value.message
+
+
+def test_zero_arg_fn_type_still_parses():
+    parse(tokenize("let f: () -> Int = g\n", "<t>"))  # must not raise
+
+
+def test_parenthesized_single_type_still_parses():
+    parse(tokenize("let x: (Int) = 5\n", "<t>"))       # grouping, unchanged

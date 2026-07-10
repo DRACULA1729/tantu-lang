@@ -13,6 +13,7 @@ from weft.errors import (
     CheckErrors, E_UNKNOWN_NAME, E_ASSIGN_IMMUTABLE, E_NON_BOOL_COND,
     E_TYPE_MISMATCH, E_LOOP_CONTROL, E_DUPLICATE, E_UNKNOWN_TYPE,
     E_CANNOT_INFER, E_UNREACHABLE, E_NON_EXHAUSTIVE, E_INTRINSIC_NOT_VALUE,
+    E_VARIANT_ARITY,
 )
 
 
@@ -516,3 +517,22 @@ def test_legit_inner_scope_shadowing_still_works():
 def test_same_binder_across_match_arms_still_works():
     check_src("enum E:\n    A(Int)\n    B(Int)\n"
               "fn f(e: E) -> Int:\n    match e:\n        A(v) => v\n        B(v) => v\n")
+
+
+def test_malformed_ctor_pattern_binds_binders_no_cascade():
+    # Some expects 1 arg; Some(a, b) is malformed. Only E0122 must surface — the arm body's
+    # use of `a` must NOT cascade into E0111 (its binders are bound with type ERROR). (Fix 5)
+    errs = errors_of(
+        "fn f(x: Option[Int]) -> Int:\n"
+        "    match x:\n"
+        "        Some(a, b) => a\n"
+        "        None => 0\n")
+    assert [e.code for e in errs] == [E_VARIANT_ARITY]
+
+
+def test_correct_arity_variant_pattern_still_checks():
+    check_src(
+        "fn f(x: Option[Int]) -> Int:\n"
+        "    match x:\n"
+        "        Some(a) => a\n"
+        "        None => 0\n")

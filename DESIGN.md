@@ -110,10 +110,10 @@ indentation but the parser expected `{}`. Rules that keep it simple:
   with the identifier `chan` followed by `[` (safe because `chan` cannot be shadowed).
 - **No prelude name may be rebound or shadowed** in v1 (checker error). Intrinsics may appear
   only as the callee of a call — using one as a value is a compile error
-  (`intrinsic 'print' is not a first-class value`). Other builtins (`str`, `len`, `push`, …)
-  are ordinary values, but referencing a *generic* builtin outside call position is also a
-  checker error (its TypeVar signature has no monomorphic type — wrap it:
-  `fn(x: Int): print(x)`).
+  (`intrinsic 'print' is not a first-class value`). Builtins (`str`, `len`, `push`, …) are
+  likewise **not** first-class values: referencing any builtin outside call position is a
+  checker error (E0109, e.g. `let f = float`). Call it, or wrap it in a lambda
+  (`fn(x: Int): print(x)`).
 
 ### 2.3 Literals & primitive types
 
@@ -203,9 +203,11 @@ loop:                              # infinite loop; exit with break
   function declared `-> R` (R ≠ Unit) the rule is purely syntactic: the body's last statement
   must be an expression of type R, a `return`, or a `match` whose arms each satisfy this rule
   — otherwise `error: missing return path — function body ends in a statement of type Unit`.
-- **Comparison domains.** `==`/`!=` are defined for all types except function and channel
-  values (compile error). Ordering `< <= > >=` is defined for `Int`, `Float`, `Str` only.
-  Both operands must have the same type (no mixed Int/Float, per §2.3).
+- **Comparison domains.** `==`/`!=` are defined for `Int`, `Float`, `Bool`, `Str` only;
+  applying them to any other type (enums, tuples, records, functions, channels) is a compile
+  error (E0113). Structural equality on compound values is post-v1. Ordering `< <= > >=` is
+  defined for `Int`, `Float`, `Str` only. Both operands must have the same type (no mixed
+  Int/Float, per §2.3).
 
 ### 2.7 Enums (ADTs), structs, pattern matching
 
@@ -401,8 +403,9 @@ pattern     := "_" | [ "-" ] INT | STR | "true" | "false" | IDENT
              | IDENT "(" pattern { "," pattern } ")"
              | "(" pattern "," pattern { "," pattern } ")"
 type        := IDENT [ "[" type { "," type } "]" ]                    # Int, List[Int], Result[Int,Str]
-             | "(" [ type { "," type } ] ")" "->" type                # function type
-             | "(" type "," type { "," type } ")"                     # tuple type
+             | "(" [ type { "," type } ] ")" "->" type                # function type (empty list ⇒ no params)
+             | "(" type ")"                                           # parenthesized/grouped type
+             | "(" type "," type { "," type } ")"                     # tuple type (arity >= 2)
 ```
 
 Parser style: **recursive descent** for statements/declarations + the layered expression
@@ -416,6 +419,9 @@ assignment. The `chan` primary is a parser special case on the identifier `chan`
 `[` (§2.2). In `select_arm`, `recv` and `send` are ordinary IDENT tokens matched by lexeme
 (safe because intrinsics cannot be shadowed, §2.2); a leading `IDENT "="` is the recv binder
 (LL(2), same trick as assignment), and the binder spelling `_` means "discard the payload".
+In **type** position the unit type is spelled `Unit`; `()` is only the unit *literal* (an
+expression) and the empty parameter list of a function type. A bare `()` in type position
+that is not followed by `->` is a parse error that points at `Unit`.
 
 ---
 
@@ -552,7 +558,7 @@ unit-testable with golden outputs. (Parallelism via multiple VM processes is out
   `sleep_fn(until_next_timer)` (default `time.sleep`) then wakes due fibers. Tests inject a
   fake clock plus a `sleep_fn` that advances it, so timer tests are instant and deterministic.
 - **Deadlock detection for free**: `ready` empty + no timers + parked fibers exist ⇒
-  `panic: deadlock — all fibers are blocked` (prints each parked fiber's stack trace). This
+  `panic: deadlock — every fiber is blocked` (prints each parked fiber's stack trace). This
   includes the case where only the main fiber is parked and every other fiber is DONE —
   DONE fibers are not work.
 - **Exit**: when the main fiber's outermost frame returns, the program exits (code 0);
@@ -600,7 +606,7 @@ data structures need no synchronization.
 arm of the first one that can proceed:
 
 ```weft
-let msg = select:
+let msg: Option[Int] = select:                    # annotation required — `None` needs the expected type
     v = recv(data)     => v                       # v: Option[Int] — recv's normal contract
     send(out, answer)  => Some(0)                 # fires when out can accept answer
     else               => None                    # optional: fires if nothing is ready
@@ -708,7 +714,7 @@ Stack effect notation: `before → after` (top on the right).
 | `ADD SUB MUL DIV MOD` | — | `a b → r` | arithmetic; `+` also Str concat (never lists — §2.9); Int DIV/MOD floor; zero divisor ⇒ panic |
 | `NEG` | — | `a → -a` | |
 | `NOT` | — | `a → !a` | |
-| `EQ NE LT LE GT GE` | — | `a b → Bool` | structural equality for Variant/Record/tuple |
+| `EQ NE LT LE GT GE` | — | `a b → Bool` | primitives only (Int/Float/Bool/Str); the checker rejects EQ/NE on Variant/Record/tuple (E0113), so those cases are unreachable — structural equality is post-v1 |
 | `JUMP t` | instr idx | `→` | unconditional |
 | `JUMP_IF_FALSE t` | instr idx | `Bool →` | pops |
 | `JUMP_IF_TRUE t` | instr idx | `Bool →` | pops (compiles `and`/`or` with a DUP/POP pattern) |
@@ -864,7 +870,8 @@ AST nodes: mutable dataclasses, every node has `span: Span`; expressions add
 `ty: Type|None = None`. All errors subclass `WeftError` and are rendered by ONE function
 (`errors.render_error`) that prints the offending source line with a caret — every stage,
 same format, from Milestone 1 onward. Process exit codes: **0** success, **1** panic,
-**2** compile-time error (lex/parse/check). Rendered errors print paths relative to the CWD
+**2** compile-time error (lex/parse/check), **130** interrupted (Ctrl-C during
+`run`/`check`/`dis`; the REPL instead prints `KeyboardInterrupt` and continues). Rendered errors print paths relative to the CWD
 so golden `.err` files are machine-independent.
 
 ### 6.3 Data-flow invariants (enforced by tests)
@@ -887,8 +894,8 @@ headers. Each input runs through the full pipeline against a **persistent** glob
 environment: one name→index table plus the growing `vm.globals` list and the type
 environment, threaded into `check()`/`compile_module()` for every input. New top-level names
 append (indices are never renumbered); re-`let` of an existing name rebinds the same index —
-the one REPL-only relaxation of §2.4. A non-Unit expression result is rendered
-(container-style quoting, Appendix B) and echoed. Errors render normally and do not end the
+the one REPL-only relaxation of §2.4. A non-Unit expression result is rendered exactly as
+`print` renders it (top-level rendering, Appendix B — a bare string echoes unquoted) and echoed. Errors render normally and do not end the
 session. Ctrl-D exits 0. `spawn` at the prompt runs the scheduler to quiescence before
 re-prompting. `repl.py` takes `(stdin, stdout)` so `test_repl.py` drives it with StringIO.
 
@@ -1109,13 +1116,13 @@ rendered error and every golden `.err` file includes its code. Complete shipped 
 | R002 | index-out-of-range | run | list index out of range |
 | R003 | send-on-closed | run | send on closed channel |
 | R004 | close-closed | run | close of closed channel |
-| R005 | deadlock | run | deadlock — all fibers are blocked |
+| R005 | deadlock | run | deadlock — every fiber is blocked |
 | R006 | uninitialized | run | value used before initialization (module init order / checker-bug backstop) |
 | R007 | match-fail | run | non-exhaustive match (the `MATCH_FAIL` safety net — should be unreachable) |
 | R008 | step-limit | run | execution step limit reached ({n} instructions) — only when `VM(step_limit=…)` is set |
 | R009 | builtin-error | run | {builtin}: {detail} — a builtin's domain error (wrapped host exception) panics at the call site |
-| R010 | stack-overflow | run | Weft call-stack depth cap exceeded |
-| R011 | bad-capacity | run | negative channel capacity |
+| R010 | stack-overflow | run | call stack overflow ({cap} frames) |
+| R011 | bad-capacity | run | channel capacity cannot be negative ({cap}) |
 
 Retired numbers: **E0110** (the v1.1 seed table's `spawn-builtin`) was never minted in the
 implementation — spawn-of-builtin ships under E0001 — and, per the never-reuse rule, the

@@ -157,6 +157,43 @@ def test_type_param_shadows_existing_type():
     assert E_DUPLICATE in _codes("fn bad[Int](x: Int) -> Int:\n    x\n")
 
 
+# ------------------------------------------ underdetermined-arg error does not cascade (Fix 1)
+
+def _errs(src: str) -> list:
+    with pytest.raises(CheckErrors) as e:
+        _check(src)
+    return e.value.errors
+
+
+_PAIR = "fn pair[T](a: T, b: T) -> T:\n    a\n"
+
+
+def test_uninferable_arg_reports_only_e0119_not_cascade():
+    # None cannot pin T, so E0119 is the root; the valid Some(1) arg and the annotation
+    # must NOT produce follow-on E0112s, and the ERROR sentinel must never leak into a message.
+    errs = _errs(_PAIR + "let o: Option[Int] = pair(None, Some(1))\n")
+    assert [x.code for x in errs] == [E_CANNOT_INFER]
+    assert all("<error>" not in x.message for x in errs)
+
+
+def test_uninferable_arg_no_annotation_single_e0119():
+    errs = _errs(_GEN + "let z = id(None)\n")
+    assert [x.code for x in errs] == [E_CANNOT_INFER]
+    assert all("<error>" not in x.message for x in errs)
+
+
+def test_uninferable_arg_with_annotation_single_e0119():
+    errs = _errs(_GEN + "let z: Option[Int] = id(None)\n")
+    assert [x.code for x in errs] == [E_CANNOT_INFER]
+    assert all("<error>" not in x.message for x in errs)
+
+
+def test_genuinely_wrong_generic_call_still_errors():
+    # pair(1, "s"): T pinned to Int by the first arg, so the Str second arg is a real mismatch.
+    codes = _codes(_PAIR + 'let o = pair(1, "s")\n')
+    assert codes == [E_TYPE_MISMATCH]
+
+
 def test_type_arg_arity_mismatch():
     assert E_UNKNOWN_TYPE in _codes(
         "enum Tree[T]:\n    Leaf\nfn bad(t: Tree[Int, Str]) -> Int:\n    0\n")

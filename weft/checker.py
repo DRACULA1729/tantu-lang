@@ -141,6 +141,25 @@ class _Checker:
     def _has_typevar(self, ty: Type) -> bool:
         return bool(self._tyvar_names(ty))
 
+    def _contains_error(self, ty: Type) -> bool:
+        """True if the ERROR sentinel appears anywhere in `ty` — used to stop a failed
+        sub-expression from leaking `<error>` into user-facing generic-call diagnostics."""
+        if ty is ERROR:
+            return True
+        if isinstance(ty, (ListT, ChanT)):
+            return self._contains_error(ty.elem)
+        if isinstance(ty, TupleT):
+            return any(self._contains_error(t) for t in ty.items)
+        if isinstance(ty, FnT):
+            return any(self._contains_error(t) for t in ty.params) or self._contains_error(ty.ret)
+        if isinstance(ty, (EnumT, StructT)):
+            return any(self._contains_error(t) for t in ty.args)
+        return False
+
+    def _subst_poisoned(self, sub: dict) -> bool:
+        """True if any bound type in the substitution carries ERROR (inference already failed)."""
+        return any(self._contains_error(t) for t in sub.values())
+
     def _generic_callee(self, e: A.Call, scope: Scope) -> tuple[object, FnT] | None:
         """If `e.func` names a generic fn (local binding or imported member), return (res, FnT)
         and set `e.func.res`. Otherwise None. Pure lookup — emits no errors (Fable ruling)."""
@@ -178,9 +197,19 @@ class _Checker:
                        f"expected {len(fty.params)} argument(s), got {len(e.args)}", e.span)
             return ERROR
         sub: dict = {}
+        poisoned = False
         for pt, at, a in zip(fty.params, arg_tys, e.args):
+            if self._contains_error(at):   # E0119 already reported at this arg; don't cascade
+                poisoned = True
+                continue
             if not self._unify(pt, at, sub):
-                self.error(E_TYPE_MISMATCH, f"expected {subst(pt, sub)!r}, found {at!r}", a.span)
+                if poisoned or self._subst_poisoned(sub):   # inference already failed: stay quiet
+                    poisoned = True
+                else:
+                    self.error(E_TYPE_MISMATCH,
+                               f"expected {subst(pt, sub)!r}, found {at!r}", a.span)
+        if poisoned or self._subst_poisoned(sub):
+            return ERROR                   # suppress the expected-type unify and the infer loop
         if expected is not None:
             self._unify(fty.ret, expected, sub)
         for name in self._tyvar_names(fty):
@@ -1024,6 +1053,25 @@ class _Checker:
         sel.ty = result if result is not None else UNIT
         return sel.ty
 
+    def _bind_error_binders(self, pat: A.Pattern, scope: Scope) -> None:
+        """After a malformed constructor/tuple pattern, still bind every identifier binder
+        (with type ERROR) so the arm body sees the names and doesn't cascade into E0111.
+        Respects the prelude-name guard; nested variant/tuple sub-patterns are walked too."""
+        if isinstance(pat, A.PIdent):
+            if pat.name in self.variant_index:              # a nullary-variant reference, not a binder
+                return
+            if pat.name in _RESERVED or pat.name in _PRELUDE_NAMES:
+                return
+            fslot = self._temp(scope)
+            slot = fslot.index if isinstance(fslot, Global) else fslot.slot
+            pat.resolved = scope.declare_at(pat.name, ERROR, slot, pat.span).resolution()
+        elif isinstance(pat, A.PVariant):
+            for arg in pat.args:
+                self._bind_error_binders(arg, scope)
+        elif isinstance(pat, A.PTuple):
+            for sub in pat.elems:
+                self._bind_error_binders(sub, scope)
+
     def _check_pattern(self, pat: A.Pattern, ty: Type, value_res, scope: Scope):
         if isinstance(pat, A.PWildcard):
             return exhaustive.WILD
@@ -1069,6 +1117,7 @@ class _Checker:
                 self.error(E_VARIANT_ARITY,
                            f"variant '{pat.name}' expects {len(vdef.payload)} argument(s), "
                            f"got {len(pat.args)}", pat.span)
+                self._bind_error_binders(pat, scope)        # bind sub-binders so the body is quiet
                 return exhaustive.WILD
             mapping = dict(zip(edef.type_params, ty.args))
             subs = []

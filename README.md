@@ -36,8 +36,8 @@ fn main() -> Unit:
 No `null`: absence and failure are values (`Option[T]`, `Result[T, E]`) unwrapped by `match`
 or the `?` operator. Bindings are immutable by default (`let`; `var` opts in). Concurrency is
 CSP — lightweight `spawn`ed fibers passing messages over typed `chan[T]` channels, never shared
-mutable state. See [`examples/`](examples/) for runnable programs (arithmetic, closures,
-collections, options, fizzbuzz, word-frequency, channels, shapes, select, generics).
+mutable state. See [`examples/`](examples/) for runnable programs (hello, arithmetic, closures,
+collections, options, fib, fizzbuzz, word-frequency, channels, shapes, select, generics).
 
 `select` waits on several channel operations at once and takes the first ready arm (a recv
 arm binds `Option[T]`; a closed channel makes its recv arm fire with `None`). With no ready

@@ -68,7 +68,7 @@ two ever disagree.
 | R002 | list index out of range | An index outside `0 .. len - 1`. |
 | R003 | send on closed channel | A `send` (or a first-ready select send arm) on a closed channel. |
 | R004 | close of closed channel | A channel was closed twice. |
-| R005 | deadlock — all fibers are blocked | Every fiber is waiting and none can proceed. |
+| R005 | deadlock — every fiber is blocked | Every fiber is waiting and none can proceed. |
 | R006 | value used before initialization | A module-level value read before its initializer ran, or a checker-bug backstop. |
 | R007 | non-exhaustive match | The `MATCH_FAIL` safety net; should be unreachable given the E0105 check. |
 | R008 | execution step limit reached | Only when the VM is run with a `step_limit` (e.g. an untrusted playground). |
