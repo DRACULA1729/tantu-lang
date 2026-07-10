@@ -1,0 +1,5 @@
+# Weft source files are plain text. GitHub has no registered Weft language, so we don't
+# claim one — no syntax highlighting on github.com, but the editors/ grammar handles local
+# editors.
+*.weft text
+examples/*.weft linguist-documentation=false

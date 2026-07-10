@@ -1,14 +1,20 @@
 # Weft
 
+[![CI](https://github.com/DRACULA1729/weft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/DRACULA1729/weft-lang/actions/workflows/ci.yml)
+
 A statically-typed, Python-readable language with fibers and channels — compiled to
 bytecode and run on a hand-built stack VM, implemented in Python 3.12 with zero
 third-party runtime dependencies.
 
-- **Design contract:** [`DESIGN.md`](DESIGN.md) (v1.1) is the single source of truth.
+- **Design contract:** [`DESIGN.md`](DESIGN.md) (v1.2) is the single source of truth.
 - **Decisions log:** [`DECISIONS.md`](DECISIONS.md) records anything the design leaves silent.
 - **Status:** M1–M9 complete — a full pipeline (lexer → parser → checker → compiler → linker → stack VM),
   static types with no null (`Option`/`Result`), pattern matching, closures, fibers + channels
-  with `select`, multi-file modules, and user-defined generics. 277 tests green.
+  with `select`, multi-file modules, and user-defined generics. The full test suite and all
+  examples run in CI.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`CONTRIBUTING.md`](CONTRIBUTING.md)
+if you want to hack on it.
 
 ## A taste
 
@@ -50,15 +56,27 @@ select:
 
 Ready arms are polled in source order, so scheduling stays deterministic and testable.
 
+## Install
+
+Weft needs Python 3.12 or newer and installs a `weft` command.
+
+```
+pip install .                                              # from a clone
+pipx install git+https://github.com/DRACULA1729/weft-lang  # isolated, without a clone
+```
+
 ## Usage
 
 ```
-python -m weft run file.weft     # run a program (use `run -` to read stdin)
-python -m weft check file.weft   # static check only
-python -m weft dis file.weft     # disassemble to bytecode
-python -m weft                   # REPL
-python -m weft --version
+weft run file.weft     # run a program (use `run -` to read stdin)
+weft check file.weft   # static check only
+weft dis file.weft     # disassemble to bytecode
+weft                   # REPL
+weft --version
 ```
+
+If you're working from a checkout without installing, `python -m weft ...` takes the same
+arguments.
 
 ## Modules
 

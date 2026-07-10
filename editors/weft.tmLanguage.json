@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Weft",
+  "scopeName": "source.weft",
+  "fileTypes": ["weft"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#types" },
+    { "include": "#function-call" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.weft"
+    },
+    "strings": {
+      "name": "string.quoted.double.weft",
+      "begin": "\"",
+      "end": "\"|(?<!\\\\)$",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.weft" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.weft" } },
+      "patterns": [
+        { "match": "\\\\[ntr\\\\\"]", "name": "constant.character.escape.weft" },
+        { "match": "\\\\.", "name": "invalid.illegal.unknown-escape.weft" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?\\b",
+          "name": "constant.numeric.float.weft"
+        },
+        {
+          "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*\\b",
+          "name": "constant.numeric.float.weft"
+        },
+        {
+          "match": "\\b[0-9][0-9_]*\\b",
+          "name": "constant.numeric.integer.weft"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(if|elif|else|match|while|for|in|loop|break|continue|return|spawn|select)\\b",
+          "name": "keyword.control.weft"
+        },
+        {
+          "match": "\\b(fn|let|var|enum|struct|import)\\b",
+          "name": "keyword.declaration.weft"
+        },
+        {
+          "match": "\\b(and|or|not)\\b",
+          "name": "keyword.operator.word.weft"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "match": "\\b(true|false)\\b",
+          "name": "constant.language.boolean.weft"
+        },
+        {
+          "match": "\\b(None|Some|Ok|Err)\\b",
+          "name": "support.constant.weft"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "match": "\\b(Int|Float|Bool|Str|Unit|List|Option|Result|Chan)\\b",
+          "name": "support.type.weft"
+        },
+        {
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b",
+          "name": "entity.name.type.weft"
+        }
+      ]
+    },
+    "function-call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "name": "entity.name.function.weft"
+    }
+  }
+}

@@ -4,20 +4,26 @@ dynamic = ["version"]
 description = "Weft — a statically-typed, Python-readable language with fibers + channels, compiled to bytecode and run on a hand-built stack VM."
 readme = "README.md"
 license = {file = "LICENSE"}
-authors = [{name = "DRACULA1729"}]
+authors = [{name = "DRACULA1729", email = "110762985+DRACULA1729@users.noreply.github.com"}]
 requires-python = ">=3.12"
 dependencies = []  # zero third-party runtime dependencies — deliberate (see DESIGN.md)
+keywords = ["language", "interpreter", "compiler", "bytecode", "vm", "static-typing", "channels", "concurrency"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
 ]
 
 [project.urls]
 Homepage = "https://github.com/DRACULA1729/weft-lang"
 Repository = "https://github.com/DRACULA1729/weft-lang"
+Issues = "https://github.com/DRACULA1729/weft-lang/issues"
+Changelog = "https://github.com/DRACULA1729/weft-lang/blob/main/CHANGELOG.md"
 
 [project.scripts]
 weft = "weft.cli:main"
