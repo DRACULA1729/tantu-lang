@@ -201,6 +201,16 @@ def _read_target(target: str, err) -> tuple[str, str] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # A std fd closed at launch (`weft ... 2>&-`) makes CPython set that sys stream to
+    # None; substitute devnull so every write/flush below stays valid (output whose fd
+    # the caller closed is discarded, and exit codes keep their documented meaning).
+    if sys.stdin is None:
+        sys.stdin = open(os.devnull, "r")
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
+
     if sys.version_info < (3, 12):
         sys.stderr.write("weft requires Python 3.12 or newer\n")
         return 2

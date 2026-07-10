@@ -480,6 +480,36 @@ def test_check_error_broken_stderr_pipe_exits_141_silently(tmp_path):
         assert bad not in combined, combined
 
 
+# --- std fds CLOSED at launch (not piped): CPython nulls the sys stream; exit codes must
+# --- keep their documented meaning with the output simply discarded (D20) ---------------
+
+
+def _run_shell_with_closed_fd(cmd_tail, redirect):
+    """Run `python -m weft <cmd_tail>` through bash with a `2>&-`-style closed fd."""
+    return subprocess.run(
+        ["bash", "-c", f"'{sys.executable}' -m weft {cmd_tail} {redirect}"],
+        capture_output=True, timeout=60,
+    ).returncode
+
+
+def test_closed_stderr_fd_successful_run_exits_0(tmp_path):
+    prog = tmp_path / "ok.weft"
+    prog.write_text('print("ok")\n')
+    assert _run_shell_with_closed_fd(f"run '{prog}'", "2>&-") == 0
+
+
+def test_closed_stderr_fd_check_error_exits_2(tmp_path):
+    prog = tmp_path / "bad.weft"
+    prog.write_text("let x = undefined_name\n")
+    assert _run_shell_with_closed_fd(f"check '{prog}'", "2>&-") == 2
+
+
+def test_closed_stdout_fd_successful_run_exits_0(tmp_path):
+    prog = tmp_path / "ok.weft"
+    prog.write_text('print("ok")\n')
+    assert _run_shell_with_closed_fd(f"run '{prog}'", "1>&-") == 0
+
+
 def test_sigint_with_broken_stdout_pipe_exits_130(tmp_path):
     """F4: Ctrl-C while stdout is a broken pipe. The interrupt wins (exit 130), and the
     KeyboardInterrupt handler silences the still-buffered stdout so its flush can't leak an
