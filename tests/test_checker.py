@@ -12,6 +12,7 @@ from weft.wtypes import INT, BOOL, STR
 from weft.errors import (
     CheckErrors, E_UNKNOWN_NAME, E_ASSIGN_IMMUTABLE, E_NON_BOOL_COND,
     E_TYPE_MISMATCH, E_LOOP_CONTROL, E_DUPLICATE, E_UNKNOWN_TYPE,
+    E_CANNOT_INFER, E_UNREACHABLE, E_NON_EXHAUSTIVE, E_INTRINSIC_NOT_VALUE,
 )
 
 
@@ -420,3 +421,98 @@ def test_if_expr_divergent_branch_is_exempt_from_agreement():
               '    let y = if x > 0: x else:\n'
               '        return 0\n'
               '    y + 1\n')
+
+
+# --------------------------------------- W11: expected-type flow into elements
+
+def test_expected_type_flows_into_list_elements():
+    check_src("let xs: List[Option[Int]] = [None]\n")
+    check_src("let xs: List[Option[Int]] = [Some(1), None]\n")
+
+
+def test_expected_type_flows_into_call_argument():
+    check_src("fn f(x: Option[Option[Int]]) -> Unit:\n    print(1)\n"
+              "fn main() -> Unit:\n    f(Some(None))\n")
+
+
+def test_expected_type_flows_into_tuple_elements():
+    check_src("let t: (Option[Int], Int) = (None, 3)\n")
+
+
+def test_expected_type_flows_into_spawn_argument():
+    check_src("fn worker(x: Option[Int]) -> Unit:\n    print(1)\n"
+              "fn main() -> Unit:\n    spawn worker(None)\n")
+
+
+def test_ambiguous_none_without_expected_type_still_errors():
+    assert errors_of("let x = None\n")[0].code == E_CANNOT_INFER
+
+
+# --------------------------------------- W14: match error-cascade suppression
+
+def test_bad_pattern_reports_only_root_error():
+    # a wrong-enum variant pattern: exactly E0121, no E0120/E0105 exhaustiveness noise
+    src = ("enum A:\n    X\nenum B:\n    Y\n"
+           "fn f(a: A) -> Int:\n    match a:\n        Y => 1\n        _ => 0\n")
+    errs = errors_of(src)
+    assert [e.code for e in errs] == ["E0121"]
+    assert E_UNREACHABLE not in {e.code for e in errs}
+    assert E_NON_EXHAUSTIVE not in {e.code for e in errs}
+
+
+# --------------------------------------- W12: name-hygiene sweep (§2.2/§2.7)
+
+def test_duplicate_fn_param_is_rejected():
+    assert errors_of("fn f(a: Int, a: Int) -> Int:\n    a\n")[0].code == E_DUPLICATE
+
+
+def test_prelude_name_as_fn_param_is_rejected():
+    assert errors_of("fn f(None: Int) -> Int:\n    1\n")[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_duplicate_lambda_param_is_rejected():
+    src = "fn m() -> Unit:\n    let g = fn(x: Int, x: Int) -> Int: x\n    print(1)\n"
+    assert errors_of(src)[0].code == E_DUPLICATE
+
+
+def test_prelude_name_as_for_binder_is_rejected():
+    src = "fn m() -> Unit:\n    for Some in [1, 2]:\n        print(Some)\n"
+    assert errors_of(src)[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_duplicate_name_in_let_tuple_is_rejected():
+    assert errors_of("let (a, a) = (1, 2)\n")[0].code == E_DUPLICATE
+
+
+def test_prelude_name_as_let_is_rejected():
+    assert errors_of("let None = 1\n")[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_prelude_name_as_match_binder_is_rejected():
+    src = "fn f(n: Int) -> Int:\n    match n:\n        Option => 1\n"
+    assert errors_of(src)[0].code == E_INTRINSIC_NOT_VALUE
+
+
+def test_duplicate_struct_field_is_rejected():
+    assert errors_of("struct P:\n    x: Int\n    x: Int\n")[0].code == E_DUPLICATE
+
+
+def test_fn_name_collides_with_struct():
+    assert errors_of("struct Foo:\n    x: Int\nfn Foo() -> Int:\n    1\n")[0].code == E_DUPLICATE
+
+
+def test_variant_name_collides_with_fn():
+    assert errors_of("fn Foo() -> Int:\n    1\nenum E:\n    Foo\n")[0].code == E_DUPLICATE
+
+
+def test_variant_name_collides_with_struct():
+    assert errors_of("struct Bar:\n    x: Int\nenum E:\n    Bar\n")[0].code == E_DUPLICATE
+
+
+def test_legit_inner_scope_shadowing_still_works():
+    check_src("let x = 1\nif true:\n    let x = 2\n    print(x)\n")
+
+
+def test_same_binder_across_match_arms_still_works():
+    check_src("enum E:\n    A(Int)\n    B(Int)\n"
+              "fn f(e: E) -> Int:\n    match e:\n        A(v) => v\n        B(v) => v\n")

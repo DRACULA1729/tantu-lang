@@ -7,9 +7,17 @@ errors, with a clean one-line diagnostic on stderr.
 
 from __future__ import annotations
 
+import io
 import os
+import re
+import signal
 import subprocess
 import sys
+import time
+
+import pytest
+
+from weft.cli import main
 
 
 def run_weft(args: list[str], stdin: bytes = b"") -> subprocess.CompletedProcess:
@@ -77,3 +85,241 @@ def test_deeply_nested_input_check_exits_2_cleanly():
     assert result.returncode == 2, out
     assert "P003" in out
     assert "Traceback" not in out
+
+
+def test_sigint_during_run_exits_130_without_traceback(tmp_path):
+    """W20/blocker: Ctrl-C during `weft run` exits 130 with a clean one-line message,
+    never a raw Python traceback. Popen is used directly so we deliver SIGINT ourselves
+    after the program is genuinely looping forever."""
+    prog = tmp_path / "loop.weft"
+    prog.write_text("fn main():\n    loop:\n        let x = 1\n\nmain()\n")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "weft", "run", str(prog)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    time.sleep(0.5)                     # let it enter the loop before signalling
+    proc.send_signal(signal.SIGINT)
+    out, err = proc.communicate(timeout=10)
+    combined = (out + err).decode("utf-8", "replace")
+    assert proc.returncode == 130, combined
+    assert "Traceback" not in combined
+    assert "interrupted" in err.decode("utf-8", "replace")
+
+
+# --- in-process tests: drive main(argv) directly (W21) --------------------------------
+#
+# main() reads sys.stdin/stdout/stderr at call time, so monkeypatching those to StringIO
+# both feeds stdin and captures the two output streams separately — letting us assert the
+# frozen §6.2 routing: compile diagnostics -> stderr; program output, dis listing, and
+# panic traces -> stdout.
+
+
+def call_main(monkeypatch, argv, stdin_text: str = ""):
+    out, err = io.StringIO(), io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(stdin_text))
+    rc = main(argv)
+    return rc, out.getvalue(), err.getvalue()
+
+
+def test_version_prints_to_stdout(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["--version"])
+    assert rc == 0
+    assert re.match(r"weft \d+\.\d+\.\d+", out)
+    assert err == ""
+
+
+def test_version_short_flag(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["-V"])
+    assert rc == 0
+    assert re.match(r"weft \d+\.\d+\.\d+", out)
+
+
+def test_unknown_command_exits_2_with_usage_on_stderr(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["frobnicate"])
+    assert rc == 2
+    assert out == ""
+    assert "usage: weft" in err
+    assert "unknown command" in err
+
+
+@pytest.mark.parametrize("cmd", ["run", "check", "dis"])
+def test_missing_file_argument_exits_2(monkeypatch, cmd):
+    rc, out, err = call_main(monkeypatch, [cmd])
+    assert rc == 2
+    assert out == ""
+    assert "missing file argument" in err
+
+
+@pytest.mark.parametrize("cmd", ["run", "check", "dis"])
+def test_valid_program_from_file(monkeypatch, tmp_path, cmd):
+    prog = tmp_path / "hello.weft"
+    prog.write_text('print("hi")\n')
+    rc, out, err = call_main(monkeypatch, [cmd, str(prog)])
+    assert rc == 0, err
+    assert err == ""
+    if cmd == "run":
+        assert "hi" in out
+    elif cmd == "dis":
+        assert out != ""            # a bytecode listing on stdout
+    else:                           # check succeeds silently
+        assert out == ""
+
+
+@pytest.mark.parametrize("cmd", ["run", "check", "dis"])
+def test_valid_program_from_stdin(monkeypatch, cmd):
+    rc, out, err = call_main(monkeypatch, [cmd, "-"], stdin_text='print("hi")\n')
+    assert rc == 0, err
+    assert err == ""
+    if cmd == "run":
+        assert "hi" in out
+    elif cmd == "dis":
+        assert out != ""
+    else:
+        assert out == ""
+
+
+def test_check_error_routes_diagnostic_to_stderr(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["check", "-"], stdin_text="let x = undefined_name\n")
+    assert rc == 2
+    assert out == ""                # nothing on stdout for a compile error
+    assert "check error" in err     # the diagnostic went to stderr
+    assert "Traceback" not in err
+
+
+def test_runtime_panic_routes_trace_to_stdout(monkeypatch):
+    """A runtime panic exits 1; per the frozen §6.2 contract the panic trace and any
+    program output go to stdout (the golden panic suite locks this), stderr stays empty."""
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1 / 0)\n")
+    assert rc == 1
+    assert "panic" in out
+    assert "R001" in out            # division-by-zero panic on stdout
+    assert err == ""
+    assert "Traceback" not in out
+
+
+def test_stdin_file_label_from_file(monkeypatch, tmp_path):
+    """Multi-module file path (build_program) and single-module stdin path agree on output."""
+    prog = tmp_path / "sum.weft"
+    prog.write_text("print(1 + 2)\n")
+    rc, out, err = call_main(monkeypatch, ["run", str(prog)])
+    assert rc == 0 and "3" in out and err == ""
+
+
+@pytest.mark.parametrize("cmd", ["run", "check", "dis"])
+def test_parse_error_from_stdin_routes_to_stderr(monkeypatch, cmd):
+    """A single WeftError (parse error) renders to stderr for every stdin subcommand."""
+    rc, out, err = call_main(monkeypatch, [cmd, "-"], stdin_text="let x = 1 +\n")
+    assert rc == 2
+    assert out == ""
+    assert "parse error" in err
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize("cmd", ["run", "check", "dis"])
+def test_nonexistent_file_exits_2(monkeypatch, tmp_path, cmd):
+    rc, out, err = call_main(monkeypatch, [cmd, str(tmp_path / "nope.weft")])
+    assert rc == 2
+    assert out == ""
+    assert "cannot read" in err
+
+
+def test_latin1_file_exits_2_in_process(monkeypatch, tmp_path):
+    bad = tmp_path / "bad.weft"
+    bad.write_bytes(b'print("caf\xe9")\n')
+    rc, out, err = call_main(monkeypatch, ["check", str(bad)])
+    assert rc == 2
+    assert "not valid UTF-8" in err
+
+
+def test_bom_stdin_is_stripped(monkeypatch):
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text='﻿print("hi")\n')
+    assert rc == 0, err
+    assert "hi" in out
+
+
+def test_no_args_starts_repl(monkeypatch):
+    rc, out, err = call_main(monkeypatch, [], stdin_text="")
+    assert rc == 0
+    assert "REPL" in out
+
+
+def test_old_python_is_rejected(monkeypatch):
+    monkeypatch.setattr(sys, "version_info", (3, 11, 0))
+    rc, out, err = call_main(monkeypatch, ["--version"])
+    assert rc == 2
+    assert "requires Python 3.12" in err
+
+
+def test_keyboard_interrupt_boundary_returns_130(monkeypatch):
+    """Ctrl-C during a command hits the dispatch boundary: exit 130, clean message."""
+    import weft.cli as climod
+    monkeypatch.setattr(climod, "run_text", _raiser(KeyboardInterrupt))
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1)\n")
+    assert rc == 130
+    assert "interrupted" in err
+    assert "Traceback" not in err
+
+
+def test_internal_error_boundary_returns_2(monkeypatch):
+    """Any other unexpected exception degrades to a one-line internal-error diagnostic."""
+    import weft.cli as climod
+    monkeypatch.setattr(climod, "run_text", _raiser(RuntimeError("synthetic bug")))
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1)\n")
+    assert rc == 2
+    assert "internal error" in err
+    assert "synthetic bug" in err
+    assert "Traceback" not in err
+
+
+def test_system_exit_propagates(monkeypatch):
+    """SystemExit is re-raised, not swallowed by the catch-all boundary."""
+    import weft.cli as climod
+    monkeypatch.setattr(climod, "run_text", _raiser(SystemExit(7)))
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+    monkeypatch.setattr(sys, "stdin", io.StringIO("print(1)\n"))
+    with pytest.raises(SystemExit):
+        main(["run", "-"])
+
+
+def test_stdin_read_failure_returns_2(monkeypatch):
+    """When the stdin read fails (invalid UTF-8), main exits 2 without dispatching."""
+    import weft.cli as climod
+    monkeypatch.setattr(climod, "_read_target", lambda *a, **k: None)
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="")
+    assert rc == 2
+
+
+# --- _read_target helper direct tests (its file branch is only reached via this API) ---
+
+
+def test_read_target_reads_file(tmp_path):
+    from weft.cli import _read_target
+    f = tmp_path / "a.weft"
+    f.write_text('print("x")\n')
+    assert _read_target(str(f), io.StringIO()) == ('print("x")\n', str(f))
+
+
+def test_read_target_missing_file():
+    from weft.cli import _read_target
+    err = io.StringIO()
+    assert _read_target("/no/such/file.weft", err) is None
+    assert "cannot read" in err.getvalue()
+
+
+def test_read_target_latin1_file(tmp_path):
+    from weft.cli import _read_target
+    bad = tmp_path / "bad.weft"
+    bad.write_bytes(b'print("caf\xe9")\n')
+    err = io.StringIO()
+    assert _read_target(str(bad), err) is None
+    assert "not valid UTF-8" in err.getvalue()
+
+
+def _raiser(exc):
+    def _raise(*args, **kwargs):
+        raise exc
+    return _raise

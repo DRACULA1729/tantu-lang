@@ -23,7 +23,7 @@ Repository = "https://github.com/DRACULA1729/weft-lang"
 weft = "weft.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest==8.3.4"]
+dev = ["pytest==8.3.4", "pytest-cov"]
 
 [build-system]
 requires = ["setuptools>=68"]

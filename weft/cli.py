@@ -228,7 +228,10 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "check":
             return check_text(src, label, sys.stderr)
         return dis_text(src, label, sys.stdout, sys.stderr)
-    except (KeyboardInterrupt, SystemExit):
+    except SystemExit:
         raise
+    except KeyboardInterrupt:               # Ctrl-C during a command: clean exit, no traceback
+        sys.stderr.write("\nweft: interrupted\n")
+        return 130
     except Exception as exc:                # catch-all boundary: no raw tracebacks (W1)
         return _internal_error(sys.stderr, exc)

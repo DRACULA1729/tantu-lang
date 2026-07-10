@@ -1,0 +1,4 @@
+import counter
+
+fn main() -> Unit:
+    print(counter.start)

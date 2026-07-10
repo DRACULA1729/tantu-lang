@@ -23,6 +23,13 @@ _TT = TokenType
 # phase comfortably under CPython's default recursion limit.
 _MAX_DEPTH = 100
 
+# Layout tokens carry no lexeme; name them plainly in diagnostics (W20).
+_LAYOUT_NAMES = {
+    _TT.NEWLINE: "end of line",
+    _TT.INDENT: "an indented block",
+    _TT.DEDENT: "end of block",
+}
+
 _ADD_OPS = {_TT.PLUS: A.BinOpKind.ADD, _TT.MINUS: A.BinOpKind.SUB}
 _MUL_OPS = {_TT.STAR: A.BinOpKind.MUL, _TT.SLASH: A.BinOpKind.DIV, _TT.PERCENT: A.BinOpKind.MOD}
 _CMP_OPS = {
@@ -83,6 +90,10 @@ class _Parser:
         if tok.type is _TT.EOF:
             raise ParseError(P_UNEXPECTED_EOF,
                              f"unexpected end of input, expected {expected}", tok.span)
+        friendly = _LAYOUT_NAMES.get(tok.type)
+        if friendly is not None:            # layout tokens have no lexeme: name them plainly
+            raise ParseError(P_UNEXPECTED_TOKEN,
+                             f"unexpected {friendly}, expected {expected}", tok.span)
         what = tok.lexeme if tok.lexeme else tok.type.name
         raise ParseError(P_UNEXPECTED_TOKEN,
                          f"unexpected {what!r}, expected {expected}", tok.span)
