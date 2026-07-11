@@ -1,0 +1,69 @@
+name: Sync playground assets to tantu-web
+
+# On every language change on main, rebuild the wheel + examples and commit them to tantu-web's
+# playground/public/ (the vendored assets its Netlify build ships). The push to tantu-web is what
+# triggers the site deploy, so the public playground tracks the language automatically.
+#
+# Auth: TANTU_WEB_DEPLOY_KEY is a repo secret holding the private half of a write deploy key
+# registered on tantu-web.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tantu/**"
+      - "examples/**"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-web
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lang
+
+      - uses: actions/checkout@v4
+        with:
+          repository: DRACULA1729/tantu-web
+          ssh-key: ${{ secrets.TANTU_WEB_DEPLOY_KEY }}
+          path: web
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Rebuild wheel + examples into web/playground/public
+        run: |
+          python3 -m venv web/.build-venv
+          web/.build-venv/bin/pip install build setuptools wheel
+          TANTU_LANG_REPO="$GITHUB_WORKSPACE/lang" node web/scripts/build-tantu-assets.mjs
+
+      # The generator imports the language modules from the freshly vendored wheel — exactly what
+      # Netlify will do — and hard-fails if a new error code has no curated description in
+      # web/docs/reference/error-descriptions.json. Fix = add the description in tantu-web.
+      - name: Validate docs generate from the new wheel
+        working-directory: web
+        run: python3 scripts/build-docs-assets.py
+
+      - name: Commit and push if changed
+        working-directory: web
+        run: |
+          git config user.name "DRACULA1729"
+          git config user.email "110762985+DRACULA1729@users.noreply.github.com"
+          git add playground/public
+          if git diff --cached --quiet; then
+            echo "Assets unchanged, nothing to sync."
+            exit 0
+          fi
+          git commit -m "Sync playground assets from tantu-lang ${GITHUB_SHA::7}"
+          git push origin master
