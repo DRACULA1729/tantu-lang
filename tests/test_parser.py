@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.errors import ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.errors import ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
 
 
 def pretty(src: str) -> str:

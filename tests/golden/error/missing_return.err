@@ -1,3 +1,3 @@
-missing_return.weft:2:5: check error [E0108]: missing return path — function must return Int on all paths
+missing_return.tn:2:5: check error [E0108]: missing return path — function must return Int on all paths
       if n < 0:
       ^^^^^^^^

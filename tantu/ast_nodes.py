@@ -17,8 +17,8 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 
-from weft.errors import Span
-from weft.wtypes import Type
+from tantu.errors import Span
+from tantu.ttypes import Type
 
 
 class BinOpKind(enum.Enum):
@@ -186,7 +186,7 @@ def _block_pretty(stmts: list["Stmt"]) -> str:
     return "(block " + " ".join(s.pretty() for s in stmts) + ")" if stmts else "(block)"
 
 
-# -- type expressions (parsed annotations; the checker resolves these to wtypes.Type) ------
+# -- type expressions (parsed annotations; the checker resolves these to ttypes.Type) ------
 
 @dataclass
 class TypeExpr(Node):
@@ -393,7 +393,7 @@ class Spawn(Stmt):        # spawn <call> | spawn <lambda>
 # =========================================================================== M8
 
 @dataclass
-class Import(Stmt):       # import name  (loads sibling name.weft)
+class Import(Stmt):       # import name  (loads sibling name.tn)
     name: str
 
     def pretty(self) -> str:

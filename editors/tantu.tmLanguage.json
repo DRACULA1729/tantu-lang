@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "Weft",
-  "scopeName": "source.weft",
-  "fileTypes": ["weft"],
+  "name": "Tantu",
+  "scopeName": "source.tantu",
+  "fileTypes": ["tn"],
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
@@ -15,32 +15,32 @@
   "repository": {
     "comments": {
       "match": "#.*$",
-      "name": "comment.line.number-sign.weft"
+      "name": "comment.line.number-sign.tantu"
     },
     "strings": {
-      "name": "string.quoted.double.weft",
+      "name": "string.quoted.double.tantu",
       "begin": "\"",
       "end": "\"|(?<!\\\\)$",
-      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.weft" } },
-      "endCaptures": { "0": { "name": "punctuation.definition.string.end.weft" } },
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tantu" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.tantu" } },
       "patterns": [
-        { "match": "\\\\[ntr\\\\\"]", "name": "constant.character.escape.weft" },
-        { "match": "\\\\.", "name": "invalid.illegal.unknown-escape.weft" }
+        { "match": "\\\\[ntr\\\\\"]", "name": "constant.character.escape.tantu" },
+        { "match": "\\\\.", "name": "invalid.illegal.unknown-escape.tantu" }
       ]
     },
     "numbers": {
       "patterns": [
         {
           "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?\\b",
-          "name": "constant.numeric.float.weft"
+          "name": "constant.numeric.float.tantu"
         },
         {
           "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*\\b",
-          "name": "constant.numeric.float.weft"
+          "name": "constant.numeric.float.tantu"
         },
         {
           "match": "\\b[0-9][0-9_]*\\b",
-          "name": "constant.numeric.integer.weft"
+          "name": "constant.numeric.integer.tantu"
         }
       ]
     },
@@ -48,15 +48,15 @@
       "patterns": [
         {
           "match": "\\b(if|elif|else|match|while|for|in|loop|break|continue|return|spawn|select)\\b",
-          "name": "keyword.control.weft"
+          "name": "keyword.control.tantu"
         },
         {
           "match": "\\b(fn|let|var|enum|struct|import)\\b",
-          "name": "keyword.declaration.weft"
+          "name": "keyword.declaration.tantu"
         },
         {
           "match": "\\b(and|or|not)\\b",
-          "name": "keyword.operator.word.weft"
+          "name": "keyword.operator.word.tantu"
         }
       ]
     },
@@ -64,11 +64,11 @@
       "patterns": [
         {
           "match": "\\b(true|false)\\b",
-          "name": "constant.language.boolean.weft"
+          "name": "constant.language.boolean.tantu"
         },
         {
           "match": "\\b(None|Some|Ok|Err)\\b",
-          "name": "support.constant.weft"
+          "name": "support.constant.tantu"
         }
       ]
     },
@@ -76,17 +76,17 @@
       "patterns": [
         {
           "match": "\\b(Int|Float|Bool|Str|Unit|List|Option|Result|Chan)\\b",
-          "name": "support.type.weft"
+          "name": "support.type.tantu"
         },
         {
           "match": "\\b[A-Z][A-Za-z0-9_]*\\b",
-          "name": "entity.name.type.weft"
+          "name": "entity.name.type.tantu"
         }
       ]
     },
     "function-call": {
       "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
-      "name": "entity.name.function.weft"
+      "name": "entity.name.function.tantu"
     }
   }
 }

@@ -1,4 +1,4 @@
 panic [R001]: division or modulo by zero
-  in <module> at div_zero.weft:1:7
+  in <module> at div_zero.tn:1:7
   print(10 / 0)
         ^^^^^^

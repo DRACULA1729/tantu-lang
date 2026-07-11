@@ -1,6 +1,6 @@
-# Weft
+# Tantu
 
-[![CI](https://github.com/DRACULA1729/weft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/DRACULA1729/weft-lang/actions/workflows/ci.yml)
+[![CI](https://github.com/DRACULA1729/tantu-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/DRACULA1729/tantu-lang/actions/workflows/ci.yml)
 
 A statically-typed, Python-readable language with fibers and channels — compiled to
 bytecode and run on a hand-built stack VM, implemented in Python 3.12 with zero
@@ -16,7 +16,7 @@ third-party runtime dependencies.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`CONTRIBUTING.md`](CONTRIBUTING.md)
 if you want to hack on it.
 
-## Why Weft
+## Why Tantu
 
 Every language I like makes me give something up. Python reads like pseudocode but
 catches nothing before it runs and has no concurrency primitives of its own. Go gives
@@ -24,7 +24,7 @@ you cheap goroutines, then shares memory by default and only *asks* you not to r
 the detector is opt-in and finds races at runtime, if you're lucky. Rust proves your
 concurrency is safe but charges you the borrow checker for the proof.
 
-Weft is a small answer to a narrow question: can a language read like Python, catch
+Tantu is a small answer to a narrow question: can a language read like Python, catch
 your mistakes before it runs, and make data races impossible without a borrow checker?
 
 It gets there with three constraints:
@@ -36,14 +36,14 @@ It gets there with three constraints:
 - **No shared mutable state across fibers.** Capturing a `var` in a closure or a
   spawned fiber is a compile error. Fibers talk over typed channels, never shared memory.
 
-That third rule is why Weft exists. A Weft program can't contain a data race — not
+That third rule is why Tantu exists. A Tantu program can't contain a data race — not
 because you were careful, but because the language took away the tools to write one.
 You get Go's concurrency ergonomics (`spawn`, `chan`, `select`) with a guarantee Go
 doesn't give you, for the price of one checker rule instead of an ownership system.
 
 ### When to use it, and when not to
 
-Use Weft if you want a tiny statically-typed language with real concurrency that you
+Use Tantu if you want a tiny statically-typed language with real concurrency that you
 can read end to end — for scripts, for exercises, or to see how these pieces fit
 together. The whole thing is pure Python with no runtime dependencies, and each stage
 (lexer, parser, checker, compiler, stack VM) is a small module you can read on its own.
@@ -53,7 +53,7 @@ Don't use it if you need speed or a library ecosystem. It runs on a bytecode VM 
 in Python, with a cooperative, deterministic scheduler; it's built for correctness and
 clarity, not throughput. v1 is deliberately small: erased generics, one concurrency
 model, one way to handle errors. Need performance? Use Go or Rust. Need libraries? Use
-Python. Weft is for when you'd rather have a language you can hold in your head, with
+Python. Tantu is for when you'd rather have a language you can hold in your head, with
 the safety properties above spelled out.
 
 ## A taste
@@ -98,45 +98,45 @@ Ready arms are polled in source order, so scheduling stays deterministic and tes
 
 ## Install
 
-Weft needs Python 3.12 or newer and installs a `weft` command.
+Tantu needs Python 3.12 or newer and installs a `tantu` command.
 
 ```
 pip install .                                              # from a clone
-pipx install git+https://github.com/DRACULA1729/weft-lang  # isolated, without a clone
+pipx install git+https://github.com/DRACULA1729/tantu-lang  # isolated, without a clone
 ```
 
 ## Usage
 
 ```
-weft run file.weft     # run a program (use `run -` to read stdin)
-weft check file.weft   # static check only
-weft dis file.weft     # disassemble to bytecode
-weft                   # REPL
-weft --version
+tantu run file.tn     # run a program (use `run -` to read stdin)
+tantu check file.tn   # static check only
+tantu dis file.tn     # disassemble to bytecode
+tantu                   # REPL
+tantu --version
 ```
 
-If you're working from a checkout without installing, `python -m weft ...` takes the same
+If you're working from a checkout without installing, `python -m tantu ...` takes the same
 arguments.
 
 ## Modules
 
-A program is a set of sibling `*.weft` files in one directory. `import name` makes the
-members of `name.weft` available as `name.member`:
+A program is a set of sibling `*.tn` files in one directory. `import name` makes the
+members of `name.tn` available as `name.member`:
 
 ```
-# mathlib.weft
+# mathlib.tn
 fn square(n: Int) -> Int:
     n * n
 let answer = 42
 
-# main.weft
+# main.tn
 import mathlib
 fn main() -> Unit:
     print(mathlib.square(5))   # 25
     print(mathlib.answer)      # 42
 ```
 
-Running `weft run main.weft` discovers the import graph from the root, checks each module in
+Running `tantu run main.tn` discovers the import graph from the root, checks each module in
 topological order, links every module's globals into one flat table, runs each module's
 top-level initializers (dependencies first), then calls the root's `main()`. Import cycles and
 missing modules are compile-time errors. (`import` needs a source file on disk — it isn't

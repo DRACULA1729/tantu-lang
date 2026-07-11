@@ -1,7 +1,7 @@
 """M9b user-generics tests: parse shape, type inference, opaque-T rules, and erasure.
 
 Generics are ERASED (Fable ruling): checked polymorphically, compiled to one Code. The
-end-to-end behavior lives in golden/run/generic_*.weft + golden/modules/generic_lib; these
+end-to-end behavior lives in golden/run/generic_*.tn + golden/modules/generic_lib; these
 unit tests lock the per-stage contracts and the diagnostic surface.
 """
 
@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.checker import check
-from weft.wtypes import INT, STR
-from weft.cli import front
-from weft.errors import (
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.checker import check
+from tantu.ttypes import INT, STR
+from tantu.cli import front
+from tantu.errors import (
     CheckErrors, ParseError,
     E_GENERIC_NOT_VALUE, E_CANNOT_INFER, E_TYPE_MISMATCH, E_NOT_COMPARABLE,
     E_NON_BOOL_COND, E_UNKNOWN_TYPE, E_DUPLICATE, E_UNSUPPORTED,

@@ -12,18 +12,18 @@ resolve.py; `synth`/`stmt` grow here per milestone.
 
 from __future__ import annotations
 
-from weft import ast_nodes as A
-from weft import exhaustive
-from weft.resolve import (
+from tantu import ast_nodes as A
+from tantu import exhaustive
+from tantu.resolve import (
     Scope, FrameRoot, ERROR_RES, resolve, Global, Local, VariantRes, StructRes, Builtin,
     StructField, ImportedGlobal,
 )
-from weft.wtypes import (
+from tantu.ttypes import (
     Type, FnT, EnumT, EnumDef, VariantDef, StructDef, StructT, TypeVar, ListT, ChanT, TupleT,
     INT, FLOAT, BOOL, STR, UNIT, ERROR, subst,
 )
-from weft.prelude import prelude_enums, BUILTIN_SIGS
-from weft.errors import (
+from tantu.prelude import prelude_enums, BUILTIN_SIGS
+from tantu.errors import (
     CheckError, CheckErrors, Span,
     E_UNSUPPORTED, E_DUPLICATE, E_ASSIGN_IMMUTABLE, E_VAR_CAPTURE, E_NON_BOOL_COND,
     E_MISSING_RETURN, E_INTRINSIC_NOT_VALUE, E_UNKNOWN_NAME, E_TYPE_MISMATCH, E_NOT_COMPARABLE,

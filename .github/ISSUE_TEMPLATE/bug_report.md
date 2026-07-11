@@ -1,18 +1,18 @@
 ---
 name: Bug report
-about: Something Weft does wrong
+about: Something Tantu does wrong
 title: ""
 labels: bug
 ---
 
-**`weft --version`:**
+**`tantu --version`:**
 
-**Program** (the smallest `.weft` that reproduces it):
+**Program** (the smallest `.tn` that reproduces it):
 
 ```
 ```
 
-**How you ran it** (e.g. `weft run file.weft`, `weft check`, the REPL):
+**How you ran it** (e.g. `tantu run file.tn`, `tantu check`, the REPL):
 
 **Expected output:**
 

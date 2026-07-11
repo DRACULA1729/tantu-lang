@@ -6,9 +6,9 @@ import io
 
 import pytest
 
-from weft.bytecode import Op, Instr, Code
-from weft.errors import Span
-from weft.vm import VM, VMError
+from tantu.bytecode import Op, Instr, Code
+from tantu.errors import Span
+from tantu.vm import VM, VMError
 
 
 def _span() -> Span:
@@ -69,24 +69,24 @@ def test_calling_a_non_callable_raises_vmerror():
 # -- W5: builtin panic boundary + total builtins (full pipeline via the golden harness) -------
 
 from harness import run_capture
-from weft.values import render
+from tantu.values import render
 
 
 def test_split_empty_separator_returns_chars():
-    out, err, code = run_capture('print(split("abc", ""))', "split.weft")
+    out, err, code = run_capture('print(split("abc", ""))', "split.tn")
     assert err == ""
     assert (out, code) == ('["a", "b", "c"]\n', 0)
 
 
 def test_float_overflow_returns_inf():
     # DESIGN §2.3: Float overflow is inf, a legal value — not a host OverflowError.
-    out, err, code = run_capture(f"print(float({10 ** 500}))", "big.weft")
+    out, err, code = run_capture(f"print(float({10 ** 500}))", "big.tn")
     assert err == ""
     assert (out, code) == ("inf\n", 0)
 
 
 def test_trunc_inf_panics_r009():
-    out, err, code = run_capture("print(trunc(1.0e300 * 1.0e300))", "inf.weft")
+    out, err, code = run_capture("print(trunc(1.0e300 * 1.0e300))", "inf.tn")
     assert code == 1
     assert err == ""
     assert "panic [R009]" in out and "trunc" in out
@@ -95,7 +95,7 @@ def test_trunc_inf_panics_r009():
 
 
 def test_trunc_nan_panics_r009():
-    out, err, code = run_capture("print(trunc(0.0 * (1.0e300 * 1.0e300)))", "nan.weft")
+    out, err, code = run_capture("print(trunc(0.0 * (1.0e300 * 1.0e300)))", "nan.tn")
     assert code == 1
     assert err == ""
     assert "panic [R009]" in out and "nan" in out and "^" in out
@@ -119,7 +119,7 @@ def test_render_deep_recursive_value():
         "        i = i + 1\n"
         "    print(xs)\n"
     )
-    out, err, code = run_capture(src, "deep.weft")
+    out, err, code = run_capture(src, "deep.tn")
     assert err == ""
     assert code == 0
     assert out.startswith("Cons(4999, Cons(4998, ")
@@ -134,15 +134,15 @@ def test_render_deep_python_value_direct():
     assert render(v) == "[" * 5000 + "1" + "]" * 5000
 
 
-# -- W17: Weft call-depth cap (R010) + truncated panic trace ---------------------------------
+# -- W17: Tantu call-depth cap (R010) + truncated panic trace ---------------------------------
 
-from weft.cli import compile_source
+from tantu.cli import compile_source
 
 _RUNAWAY = "fn f(n: Int) -> Int:\n    return f(n + 1)\n\nfn main() -> Unit:\n    print(f(0))\n"
 
 
 def test_runaway_recursion_panics_r010_with_truncated_trace():
-    out, err, code = run_capture(_RUNAWAY, "so.weft")
+    out, err, code = run_capture(_RUNAWAY, "so.tn")
     assert code == 1
     assert err == ""
     assert "panic [R010]" in out and "call stack overflow (100000 frames)" in out
@@ -152,9 +152,9 @@ def test_runaway_recursion_panics_r010_with_truncated_trace():
 
 
 def test_max_frames_is_a_ctor_param():
-    code = compile_source(_RUNAWAY, "so2.weft")
+    code = compile_source(_RUNAWAY, "so2.tn")
     out = io.StringIO()
-    rc = VM(stdout=out, max_frames=50).run(code, _RUNAWAY, "so2.weft")
+    rc = VM(stdout=out, max_frames=50).run(code, _RUNAWAY, "so2.tn")
     assert rc == 1
     assert "call stack overflow (50 frames)" in out.getvalue()
 
@@ -163,7 +163,7 @@ def test_deep_but_legal_recursion_still_succeeds():
     # 50k frames sits well under the 100k default cap — deep-but-legal recursion must work.
     src = ("fn f(n: Int) -> Int:\n    if n == 0:\n        return 0\n    return f(n - 1) + 1\n\n"
            "fn main() -> Unit:\n    print(f(50000))\n")
-    out, err, code = run_capture(src, "deep_rec.weft")
+    out, err, code = run_capture(src, "deep_rec.tn")
     assert (err, code) == ("", 0)
     assert out == "50000\n"
 
@@ -173,7 +173,7 @@ def test_deep_but_legal_recursion_still_succeeds():
 
 def test_negative_channel_capacity_panics_r011():
     out, err, code = run_capture(
-        "fn main() -> Unit:\n    let c = chan[Int](-5)\n    send(c, 1)\n", "nc.weft")
+        "fn main() -> Unit:\n    let c = chan[Int](-5)\n    send(c, 1)\n", "nc.tn")
     assert code == 1
     assert err == ""
     assert "panic [R011]" in out and "channel capacity cannot be negative (-5)" in out

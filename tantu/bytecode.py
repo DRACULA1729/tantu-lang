@@ -14,7 +14,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from weft.errors import Span
+from tantu.errors import Span
 
 
 class Op(enum.IntEnum):

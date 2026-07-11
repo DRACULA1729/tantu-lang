@@ -1,3 +1,3 @@
-empty_list_infer.weft:2:14: check error [E0107]: cannot infer element type of []; add an annotation
+empty_list_infer.tn:2:14: check error [E0107]: cannot infer element type of []; add an annotation
       let xs = []
                ^^

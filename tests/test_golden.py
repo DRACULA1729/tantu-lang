@@ -38,7 +38,7 @@ def test_panic_golden(panic_case, update_goldens):
 
 
 def test_module_golden(module_case, update_goldens):
-    """A multi-module program (golden/modules/<name>/main.weft + siblings) runs to exit 0."""
+    """A multi-module program (golden/modules/<name>/main.tn + siblings) runs to exit 0."""
     out, err, code = run_program(module_case)
     assert err == "", f"unexpected stderr:\n{err}"
     assert code == 0, f"expected success, got exit {code}"

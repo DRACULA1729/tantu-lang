@@ -1,7 +1,7 @@
 # Changelog
 
-All notable changes to Weft are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Weft uses
+All notable changes to Tantu are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Tantu uses
 [semantic versioning](https://semver.org/).
 
 ## 0.1.0 - 2026-07-10
@@ -17,12 +17,12 @@ First public release.
 - Concurrency: `spawn`ed fibers that pass messages over typed channels, and `select` over
   several channel operations (source-order polling, an optional non-blocking `else` arm, a
   closed channel fires its recv arm with `None`).
-- Modules: a program is a set of sibling `*.weft` files; `import name` exposes `name.member`.
+- Modules: a program is a set of sibling `*.tn` files; `import name` exposes `name.member`.
   Imports are resolved, checked in topological order, and linked into one flat global table.
 - A bytecode compiler and a hand-written stack VM with a cooperative, deterministic scheduler.
-- A REPL, and a `weft` command with `run`, `check`, and `dis` (disassemble) subcommands plus
+- A REPL, and a `tantu` command with `run`, `check`, and `dis` (disassemble) subcommands plus
   `--version`. `run -` reads a program from stdin.
-- An append-only error-code registry (`weft/errors.py`, mirrored in `DESIGN.md` Appendix C):
+- An append-only error-code registry (`tantu/errors.py`, mirrored in `DESIGN.md` Appendix C):
   `L` lex, `P` parse, `E` check, `R` runtime.
 - Zero third-party runtime dependencies.
 
@@ -31,7 +31,7 @@ First public release.
 This release closed a set of crash and soundness holes found in pre-release audits:
 
 - No input (file, stdin, or a REPL line) produces a raw Python traceback. Everything degrades
-  to a Weft diagnostic or panic with the documented exit code; an internal error prints one
+  to a Tantu diagnostic or panic with the documented exit code; an internal error prints one
   line asking for a bug report.
 - The parser guards nesting depth on every recursive entry point (`P003`).
 - The VM caps call-stack depth (`R010`) and channel capacity is checked (`R011`); builtin

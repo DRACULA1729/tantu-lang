@@ -7,7 +7,7 @@ the stdlib module.
 
 from __future__ import annotations
 
-from weft.wtypes import EnumDef, VariantDef, TypeVar
+from tantu.ttypes import EnumDef, VariantDef, TypeVar
 
 # Option[T] = Some(T) | None ; Result[T, E] = Ok(T) | Err(E).  Tags = declaration order.
 _T = TypeVar("T")
@@ -26,8 +26,8 @@ def prelude_enums() -> dict[str, EnumDef]:
 
 import math
 
-from weft.wtypes import FnT, ListT, EnumT, INT, FLOAT, STR
-from weft.values import Variant
+from tantu.ttypes import FnT, ListT, EnumT, INT, FLOAT, STR
+from tantu.values import Variant
 
 
 def _opt(name: str, elem):

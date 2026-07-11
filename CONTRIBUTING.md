@@ -1,6 +1,6 @@
-# Contributing to Weft
+# Contributing to Tantu
 
-Thanks for looking. Weft is a small codebase with a clear contract, so most changes are
+Thanks for looking. Tantu is a small codebase with a clear contract, so most changes are
 straightforward once you know where things live.
 
 ## Setup
@@ -13,27 +13,27 @@ pip install -e ".[dev]"
 pytest
 ```
 
-`pytest` runs the whole suite. The CI job runs the same suite plus `weft check` and
-`weft run` over every file in `examples/`.
+`pytest` runs the whole suite. The CI job runs the same suite plus `tantu check` and
+`tantu run` over every file in `examples/`.
 
 ## Where things live
 
-The `weft/` package is a pipeline, one stage per module:
+The `tantu/` package is a pipeline, one stage per module:
 
 ```
 lexer.py -> parser.py -> checker.py -> compiler.py -> vm.py
 ```
 
-`tokens.py`, `ast_nodes.py`, `wtypes.py`, `resolve.py`, `bytecode.py`, and `values.py` hold the
+`tokens.py`, `ast_nodes.py`, `ttypes.py`, `resolve.py`, `bytecode.py`, and `values.py` hold the
 data types passed between stages — `bytecode.py` defines the `Op` opcode set and `Instr`/`Code`
 the compiler emits and the VM executes. `exhaustive.py` is the match-exhaustiveness check, `linker.py` flattens
 multi-module programs, `prelude.py` defines the builtins, `errors.py` is the error hierarchy
 and the code registry, and `cli.py` / `repl.py` / `__main__.py` are the entry points.
 
-Tests live in `tests/`. Alongside the unit tests there are golden tests: a `.weft` program and
+Tests live in `tests/`. Alongside the unit tests there are golden tests: a `.tn` program and
 its recorded output. They live under `tests/golden/` in `run/` (stdout, exit 0), `error/`
 (rendered compile error on stderr, exit 2), `panic/` (output plus a panic trace, exit 1), and
-`modules/` (one directory per multi-module program). Adding a case is dropping a `.weft` file
+`modules/` (one directory per multi-module program). Adding a case is dropping a `.tn` file
 into the right directory; the harness discovers it.
 
 To update the recorded output after an intentional change, run:
@@ -51,15 +51,15 @@ commit it — an unexpected change in a golden usually means a real regression.
 them is a bug; say which in your change. Anything the design leaves open is recorded in
 `DECISIONS.md` (append-only — add a row, never edit one).
 
-Error codes in `weft/errors.py` are append-only and never reused. Add a new code; don't
+Error codes in `tantu/errors.py` are append-only and never reused. Add a new code; don't
 renumber or recycle an old one. `DESIGN.md` Appendix C and `docs/errors.md` list them all.
 
 ## Reporting bugs
 
 Open an issue with:
 
-- the output of `weft --version`,
-- the `.weft` program (the smallest one that still shows it),
+- the output of `tantu --version`,
+- the `.tn` program (the smallest one that still shows it),
 - what you expected, and
 - what you got.
 

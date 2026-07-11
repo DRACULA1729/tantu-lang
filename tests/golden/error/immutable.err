@@ -1,4 +1,4 @@
-immutable.weft:2:1: check error [E0102]: cannot assign to immutable binding 'x'
+immutable.tn:2:1: check error [E0102]: cannot assign to immutable binding 'x'
   x = 2
   ^^^^^
   hint: 'x' is a 'let' (declared at line 1); use 'var' to allow reassignment

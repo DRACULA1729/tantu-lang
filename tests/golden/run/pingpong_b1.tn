@@ -1,4 +1,4 @@
-# weft-test: budget=1
+# tantu-test: budget=1
 fn pong(c: Chan[Int], d: Chan[Int]) -> Unit:
     loop:
         match recv(c):

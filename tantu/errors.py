@@ -1,4 +1,4 @@
-"""Spans, the WeftError hierarchy, and the single caret-rendering function.
+"""Spans, the TantuError hierarchy, and the single caret-rendering function.
 
 Everything the compiler and VM report to the user flows through here (DESIGN.md §6.2:
 "rendered by ONE function"). Source offsets are the single source of truth for a Span;
@@ -45,7 +45,7 @@ class Span:
 
 # --------------------------------------------------------------------------- errors
 
-class WeftError(Exception):
+class TantuError(Exception):
     """A user-facing compile-time error. One of lex / parse / check.
 
     Carries a stable code (Appendix C), a message, the offending span, and an optional hint.
@@ -61,17 +61,17 @@ class WeftError(Exception):
         self.hint = hint
 
 
-class LexError(WeftError):
+class LexError(TantuError):
     def __init__(self, code: str, message: str, span: Span | None, *, hint: str | None = None) -> None:
         super().__init__(code, message, span, stage="lex", hint=hint)
 
 
-class ParseError(WeftError):
+class ParseError(TantuError):
     def __init__(self, code: str, message: str, span: Span | None, *, hint: str | None = None) -> None:
         super().__init__(code, message, span, stage="parse", hint=hint)
 
 
-class CheckError(WeftError):
+class CheckError(TantuError):
     def __init__(self, code: str, message: str, span: Span | None, *, hint: str | None = None) -> None:
         super().__init__(code, message, span, stage="check", hint=hint)
 
@@ -79,12 +79,12 @@ class CheckError(WeftError):
 class CheckErrors(Exception):
     """A batch of check-stage errors reported together (DESIGN.md §3.1: not first-error-only)."""
 
-    def __init__(self, errors: list[WeftError]) -> None:
+    def __init__(self, errors: list[TantuError]) -> None:
         super().__init__(f"{len(errors)} error(s)")
         self.errors = errors
 
 
-class WeftPanic(Exception):
+class TantuPanic(Exception):
     """A runtime panic (DESIGN.md §2.8). Terminates the program with exit code 1.
 
     The VM attaches the fiber's frame trace when it catches this in run().
@@ -131,7 +131,7 @@ def render_span(src: str, span: Span) -> list[str]:
     return [f"  {source_line}", f"  {caret_line}"]
 
 
-def render_error(src: str, err: WeftError) -> str:
+def render_error(src: str, err: TantuError) -> str:
     """Render one compile-time error: a header line, the source line, and a caret."""
     lines: list[str] = []
     if err.span is not None:
@@ -146,12 +146,12 @@ def render_error(src: str, err: WeftError) -> str:
     return "\n".join(lines)
 
 
-def render_errors(src: str, errs: list[WeftError]) -> str:
+def render_errors(src: str, errs: list[TantuError]) -> str:
     """Render a batch of errors (blank-line separated)."""
     return "\n\n".join(render_error(src, e) for e in errs)
 
 
-def render_panic(srcs: dict, trace: list[tuple[str, Span | None]], panic: WeftPanic) -> str:
+def render_panic(srcs: dict, trace: list[tuple[str, Span | None]], panic: TantuPanic) -> str:
     """Render a runtime panic + fiber stack trace (innermost first). `srcs` maps file→source
     so cross-module frames caret against their own file."""
     lines = [f"panic [{panic.code}]: {panic.message}"]

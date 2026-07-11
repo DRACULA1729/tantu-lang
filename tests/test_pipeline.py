@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import io
 
-from weft import (  # noqa: F401 — importing is the point (no import-time break, no shadow)
+from tantu import (  # noqa: F401 — importing is the point (no import-time break, no shadow)
     lexer, parser, checker, compiler, vm, cli, repl,
-    tokens, ast_nodes, bytecode, errors, values, wtypes,
+    tokens, ast_nodes, bytecode, errors, values, ttypes,
 )
-from weft.tokens import Token, TokenType
-from weft.ast_nodes import Module
-from weft.bytecode import Code
+from tantu.tokens import Token, TokenType
+from tantu.ast_nodes import Module
+from tantu.bytecode import Code
 
 
 def test_stage_boundaries():

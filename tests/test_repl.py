@@ -7,8 +7,8 @@ import os
 import subprocess
 import sys
 
-import weft.repl
-from weft.repl import repl
+import tantu.repl
+from tantu.repl import repl
 
 
 def drive(text: str) -> tuple[str, int]:
@@ -66,16 +66,16 @@ def test_eof_exits_zero():
 
 
 def test_internal_error_does_not_end_the_session(monkeypatch):
-    """An unexpected (non-Weft) exception during evaluation degrades to a one-line
+    """An unexpected (non-Tantu) exception during evaluation degrades to a one-line
     internal-error message and the session keeps going (W1 catch-all boundary)."""
-    orig = weft.repl._Session.run_input
+    orig = tantu.repl._Session.run_input
 
     def exploding_run_input(self, src):
         if "boom" in src:
             raise RuntimeError("synthetic evaluator bug")
         return orig(self, src)
 
-    monkeypatch.setattr(weft.repl._Session, "run_input", exploding_run_input)
+    monkeypatch.setattr(tantu.repl._Session, "run_input", exploding_run_input)
     out, rc = drive("boom\n1 + 1\n")
     assert "internal error" in out
     assert "synthetic evaluator bug" in out
@@ -86,14 +86,14 @@ def test_internal_error_does_not_end_the_session(monkeypatch):
 
 def test_keyboard_interrupt_does_not_end_the_session(monkeypatch):
     """Ctrl-C during evaluation prints KeyboardInterrupt and returns to the prompt."""
-    orig = weft.repl._Session.run_input
+    orig = tantu.repl._Session.run_input
 
     def interrupted_run_input(self, src):
         if "boom" in src:
             raise KeyboardInterrupt
         return orig(self, src)
 
-    monkeypatch.setattr(weft.repl._Session, "run_input", interrupted_run_input)
+    monkeypatch.setattr(tantu.repl._Session, "run_input", interrupted_run_input)
     out, rc = drive("boom\n40 + 2\n")
     assert "KeyboardInterrupt" in out
     assert "42\n" in out
@@ -247,7 +247,7 @@ def test_repl_broken_stdout_pipe_exits_not_hang():
     BrokenPipeError. The loop must EXIT (rc 141), not busy-loop forever writing internal-error
     lines. A real subprocess is used so a regression genuinely hangs (caught by the timeout)."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "weft"],
+        [sys.executable, "-m", "tantu"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )

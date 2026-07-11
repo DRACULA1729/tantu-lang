@@ -11,12 +11,12 @@ M2 then needs no lexer change (DESIGN.md M1/M2, Fable ruling 5).
 
 from __future__ import annotations
 
-from weft.errors import (
+from tantu.errors import (
     Span, LexError,
     L_TABS_IN_INDENT, L_BAD_DEDENT, L_ILLEGAL_CHAR, L_INVALID_ESCAPE, L_UNTERMINATED_STRING,
     L_INVALID_NUMBER,
 )
-from weft.tokens import Token, TokenType, KEYWORDS
+from tantu.tokens import Token, TokenType, KEYWORDS
 
 _TT = TokenType
 

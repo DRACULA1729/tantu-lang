@@ -1,3 +1,3 @@
-index_not_int.weft:3:14: check error [E0112]: list index must be Int, found Str
+index_not_int.tn:3:14: check error [E0112]: list index must be Int, found Str
       print(xs["a"])
                ^^^

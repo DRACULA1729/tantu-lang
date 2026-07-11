@@ -14,14 +14,14 @@ supply StringIO.
 
 from __future__ import annotations
 
-from weft import __version__
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.checker import check
-from weft.compiler import compile_module
-from weft.vm import VM
-from weft.resolve import Scope, FrameRoot
-from weft.errors import WeftError, CheckErrors, render_error, render_errors
+from tantu import __version__
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.checker import check
+from tantu.compiler import compile_module
+from tantu.vm import VM
+from tantu.resolve import Scope, FrameRoot
+from tantu.errors import TantuError, CheckErrors, render_error, render_errors
 
 
 class _Session:
@@ -103,7 +103,7 @@ def _open_brackets(buf: str) -> bool:
 
 
 def repl(stdin, stdout) -> int:
-    stdout.write(f"weft {__version__} REPL — Ctrl-D to exit\n")
+    stdout.write(f"tantu {__version__} REPL — Ctrl-D to exit\n")
     session = _Session(stdout)
     while True:
         try:
@@ -133,7 +133,7 @@ def repl(stdin, stdout) -> int:
                 session.run_input(buf)
             except CheckErrors as e:
                 stdout.write(render_errors(buf, e.errors) + "\n")
-            except WeftError as e:
+            except TantuError as e:
                 stdout.write(render_error(buf, e) + "\n")
         except KeyboardInterrupt:           # Ctrl-C: abandon the current line, keep the session
             stdout.write("\nKeyboardInterrupt\n")
@@ -141,6 +141,6 @@ def repl(stdin, stdout) -> int:
         except BrokenPipeError:             # stdout consumer went away: exit the loop, don't busy-spin
             return 141
         except Exception as e:              # catch-all boundary: the session must never die (W1)
-            stdout.write(f"weft: internal error: {type(e).__name__}: {e}\n"
-                         "  this is a bug in weft — please report it\n")
+            stdout.write(f"tantu: internal error: {type(e).__name__}: {e}\n"
+                         "  this is a bug in tantu — please report it\n")
             continue

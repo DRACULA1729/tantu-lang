@@ -1,8 +1,8 @@
 # Error codes
 
-Every error Weft reports carries a stable code. This page lists them by family: `L` lex, `P`
+Every error Tantu reports carries a stable code. This page lists them by family: `L` lex, `P`
 parse, `E` check, `R` runtime panic. Codes are append-only and never reused. The list in
-`weft/errors.py` is the machine-readable form; `DESIGN.md` Appendix C is authoritative if the
+`tantu/errors.py` is the machine-readable form; `DESIGN.md` Appendix C is authoritative if the
 two ever disagree.
 
 ## L — lexer
@@ -53,7 +53,7 @@ two ever disagree.
 | E0123 | variant/struct constructor is not a first-class value | Call-position only. Wrap it in a lambda to pass it around. |
 | E0124 | duplicate variant name within an enum | Rename one variant. |
 | E0130 | import cycle | Modules import each other in a loop. Break the cycle. |
-| E0131 | cannot find module | No `name.weft` sibling for the `import`. |
+| E0131 | cannot find module | No `name.tn` sibling for the `import`. |
 | E0132 | module has no member | The qualified name isn't exported by that module. |
 | E0133 | module is not a value | A module name used as a value. Qualify it with a member. |
 | E0134 | import is only available when running a source file | Imports don't work from stdin or the REPL. |

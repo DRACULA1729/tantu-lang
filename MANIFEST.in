@@ -3,5 +3,5 @@ include README.md
 include CHANGELOG.md
 include DESIGN.md
 include DECISIONS.md
-recursive-include examples *.weft
+recursive-include examples *.tn
 recursive-include tests *

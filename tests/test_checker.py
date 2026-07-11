@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.checker import check
-from weft.resolve import Global
-from weft.wtypes import INT, BOOL, STR
-from weft.errors import (
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.checker import check
+from tantu.resolve import Global
+from tantu.ttypes import INT, BOOL, STR
+from tantu.errors import (
     CheckErrors, E_UNKNOWN_NAME, E_ASSIGN_IMMUTABLE, E_NON_BOOL_COND,
     E_TYPE_MISMATCH, E_LOOP_CONTROL, E_DUPLICATE, E_UNKNOWN_TYPE,
     E_CANNOT_INFER, E_UNREACHABLE, E_NON_EXHAUSTIVE, E_INTRINSIC_NOT_VALUE,
@@ -105,7 +105,7 @@ def test_error_does_not_cascade():
 
 # --- M3 -------------------------------------------------------------------
 
-from weft.wtypes import FnT, UNIT  # noqa: E402
+from tantu.ttypes import FnT, UNIT  # noqa: E402
 
 
 def test_fn_hoisted_and_main_recorded():
@@ -165,7 +165,7 @@ def test_calling_a_non_function():
 
 # --- M4 -------------------------------------------------------------------
 
-from weft.wtypes import EnumT  # noqa: E402
+from tantu.ttypes import EnumT  # noqa: E402
 
 
 def test_enum_and_variant_construction_type():
@@ -224,7 +224,7 @@ def test_duplicate_variant_name():
 
 # --- M5 -------------------------------------------------------------------
 
-from weft.wtypes import ListT, TupleT, StructT  # noqa: E402
+from tantu.ttypes import ListT, TupleT, StructT  # noqa: E402
 
 
 def test_list_and_index_types():

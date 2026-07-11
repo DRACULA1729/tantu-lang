@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from weft.errors import Span
-from weft.wtypes import Type
+from tantu.errors import Span
+from tantu.ttypes import Type
 
 
 # --------------------------------------------------------------- Resolution (compiler-facing)

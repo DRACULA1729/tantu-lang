@@ -1,6 +1,6 @@
 """CLI exception-boundary tests (W1): no input may ever produce a Python traceback.
 
-Subprocess tests against `python -m weft` covering invalid-UTF-8 source files and
+Subprocess tests against `python -m tantu` covering invalid-UTF-8 source files and
 binary stdin. Exit-code contract (DESIGN.md §6.2): 2 for compile-time/usage/internal
 errors, with a clean one-line diagnostic on stderr.
 """
@@ -18,13 +18,13 @@ import time
 
 import pytest
 
-from weft.cli import main
+from tantu.cli import main
 
 
-def run_weft(args: list[str], stdin: bytes = b"") -> subprocess.CompletedProcess:
+def run_tantu(args: list[str], stdin: bytes = b"") -> subprocess.CompletedProcess:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     return subprocess.run(
-        [sys.executable, "-m", "weft", *args],
+        [sys.executable, "-m", "tantu", *args],
         input=stdin, capture_output=True, timeout=60, env=env,
     )
 
@@ -35,9 +35,9 @@ def _decoded(result: subprocess.CompletedProcess) -> str:
 
 def test_invalid_utf8_file_check_exits_2_cleanly(tmp_path):
     # Latin-1 "café" — the 0xe9 byte is not valid UTF-8.
-    bad = tmp_path / "bad.weft"
+    bad = tmp_path / "bad.tn"
     bad.write_bytes(b'print("caf\xe9")\n')
-    result = run_weft(["check", str(bad)])
+    result = run_tantu(["check", str(bad)])
     out = _decoded(result)
     assert result.returncode == 2, out
     assert "Traceback" not in out
@@ -45,9 +45,9 @@ def test_invalid_utf8_file_check_exits_2_cleanly(tmp_path):
 
 
 def test_invalid_utf8_file_run_exits_2_cleanly(tmp_path):
-    bad = tmp_path / "bad.weft"
+    bad = tmp_path / "bad.tn"
     bad.write_bytes(b"\xff\xfe let x = 1\n")
-    result = run_weft(["run", str(bad)])
+    result = run_tantu(["run", str(bad)])
     out = _decoded(result)
     assert result.returncode == 2, out
     assert "Traceback" not in out
@@ -55,7 +55,7 @@ def test_invalid_utf8_file_run_exits_2_cleanly(tmp_path):
 
 
 def test_binary_stdin_run_exits_2_cleanly():
-    result = run_weft(["run", "-"], stdin=b"\xff\xfe\x00\x01binary\x9c")
+    result = run_tantu(["run", "-"], stdin=b"\xff\xfe\x00\x01binary\x9c")
     out = _decoded(result)
     assert result.returncode == 2, out
     assert "Traceback" not in out
@@ -63,7 +63,7 @@ def test_binary_stdin_run_exits_2_cleanly():
 
 
 def test_binary_stdin_check_exits_2_cleanly():
-    result = run_weft(["check", "-"], stdin=b"\x80\x81\x82")
+    result = run_tantu(["check", "-"], stdin=b"\x80\x81\x82")
     out = _decoded(result)
     assert result.returncode == 2, out
     assert "Traceback" not in out
@@ -72,7 +72,7 @@ def test_binary_stdin_check_exits_2_cleanly():
 
 def test_valid_stdin_still_runs():
     """The stdin path still works for well-formed UTF-8 source (no regression)."""
-    result = run_weft(["run", "-"], stdin=b'print("hi")\n')
+    result = run_tantu(["run", "-"], stdin=b'print("hi")\n')
     out = _decoded(result)
     assert result.returncode == 0, out
     assert "hi" in out
@@ -81,7 +81,7 @@ def test_valid_stdin_still_runs():
 def test_deeply_nested_input_check_exits_2_cleanly():
     """W4: deep nesting is a diagnosed parse error (P003), never a Python crash."""
     src = ("not " * 400 + "true\n").encode("utf-8")
-    result = run_weft(["check", "-"], stdin=src)
+    result = run_tantu(["check", "-"], stdin=src)
     out = _decoded(result)
     assert result.returncode == 2, out
     assert "P003" in out
@@ -90,14 +90,14 @@ def test_deeply_nested_input_check_exits_2_cleanly():
 
 # A looping program that first prints a marker, so the test can wait for the loop to be
 # genuinely running before signalling — a fixed sleep would flake on a slow CI runner if the
-# signal landed during Python startup (before weft's handler exists). Run with `-u` so the
-# marker flushes immediately (weft's VM print does not flush, and a PIPE is block-buffered).
+# signal landed during Python startup (before tantu's handler exists). Run with `-u` so the
+# marker flushes immediately (tantu's VM print does not flush, and a PIPE is block-buffered).
 _LOOP_PROG = 'fn main():\n    print("running")\n    loop:\n        let x = 1\n\nmain()\n'
 
 
-def _spawn_looping_weft(prog_path):
+def _spawn_looping_tantu(prog_path):
     return subprocess.Popen(
-        [sys.executable, "-u", "-m", "weft", "run", str(prog_path)],
+        [sys.executable, "-u", "-m", "tantu", "run", str(prog_path)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
@@ -113,12 +113,12 @@ def _wait_for_marker(proc, timeout=10):
 
 
 def test_sigint_during_run_exits_130_without_traceback(tmp_path):
-    """W20/blocker: Ctrl-C during `weft run` exits 130 with a clean one-line message,
+    """W20/blocker: Ctrl-C during `tantu run` exits 130 with a clean one-line message,
     never a raw Python traceback. Popen is used directly so we deliver SIGINT ourselves
     after the program is genuinely looping forever."""
-    prog = tmp_path / "loop.weft"
+    prog = tmp_path / "loop.tn"
     prog.write_text(_LOOP_PROG)
-    proc = _spawn_looping_weft(prog)
+    proc = _spawn_looping_tantu(prog)
     try:
         _wait_for_marker(proc)          # loop is running and the handler is installed
         proc.send_signal(signal.SIGINT)
@@ -136,9 +136,9 @@ def test_sigint_during_run_exits_130_without_traceback(tmp_path):
 def test_double_sigint_during_run_exits_130_without_traceback(tmp_path):
     """A second Ctrl-C arriving during teardown must not resurface as a CPython
     `threading._shutdown` traceback: the handler ignores SIGINT after the first hit."""
-    prog = tmp_path / "loop.weft"
+    prog = tmp_path / "loop.tn"
     prog.write_text(_LOOP_PROG)
-    proc = _spawn_looping_weft(prog)
+    proc = _spawn_looping_tantu(prog)
     try:
         _wait_for_marker(proc)
         proc.send_signal(signal.SIGINT)
@@ -174,21 +174,21 @@ def call_main(monkeypatch, argv, stdin_text: str = ""):
 def test_version_prints_to_stdout(monkeypatch):
     rc, out, err = call_main(monkeypatch, ["--version"])
     assert rc == 0
-    assert re.match(r"weft \d+\.\d+\.\d+", out)
+    assert re.match(r"tantu \d+\.\d+\.\d+", out)
     assert err == ""
 
 
 def test_version_short_flag(monkeypatch):
     rc, out, err = call_main(monkeypatch, ["-V"])
     assert rc == 0
-    assert re.match(r"weft \d+\.\d+\.\d+", out)
+    assert re.match(r"tantu \d+\.\d+\.\d+", out)
 
 
 def test_unknown_command_exits_2_with_usage_on_stderr(monkeypatch):
     rc, out, err = call_main(monkeypatch, ["frobnicate"])
     assert rc == 2
     assert out == ""
-    assert "usage: weft" in err
+    assert "usage: tantu" in err
     assert "unknown command" in err
 
 
@@ -202,7 +202,7 @@ def test_missing_file_argument_exits_2(monkeypatch, cmd):
 
 @pytest.mark.parametrize("cmd", ["run", "check", "dis"])
 def test_valid_program_from_file(monkeypatch, tmp_path, cmd):
-    prog = tmp_path / "hello.weft"
+    prog = tmp_path / "hello.tn"
     prog.write_text('print("hi")\n')
     rc, out, err = call_main(monkeypatch, [cmd, str(prog)])
     assert rc == 0, err
@@ -249,7 +249,7 @@ def test_runtime_panic_routes_trace_to_stdout(monkeypatch):
 
 def test_stdin_file_label_from_file(monkeypatch, tmp_path):
     """Multi-module file path (build_program) and single-module stdin path agree on output."""
-    prog = tmp_path / "sum.weft"
+    prog = tmp_path / "sum.tn"
     prog.write_text("print(1 + 2)\n")
     rc, out, err = call_main(monkeypatch, ["run", str(prog)])
     assert rc == 0 and "3" in out and err == ""
@@ -257,7 +257,7 @@ def test_stdin_file_label_from_file(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("cmd", ["run", "check", "dis"])
 def test_parse_error_from_stdin_routes_to_stderr(monkeypatch, cmd):
-    """A single WeftError (parse error) renders to stderr for every stdin subcommand."""
+    """A single TantuError (parse error) renders to stderr for every stdin subcommand."""
     rc, out, err = call_main(monkeypatch, [cmd, "-"], stdin_text="let x = 1 +\n")
     assert rc == 2
     assert out == ""
@@ -267,14 +267,14 @@ def test_parse_error_from_stdin_routes_to_stderr(monkeypatch, cmd):
 
 @pytest.mark.parametrize("cmd", ["run", "check", "dis"])
 def test_nonexistent_file_exits_2(monkeypatch, tmp_path, cmd):
-    rc, out, err = call_main(monkeypatch, [cmd, str(tmp_path / "nope.weft")])
+    rc, out, err = call_main(monkeypatch, [cmd, str(tmp_path / "nope.tn")])
     assert rc == 2
     assert out == ""
     assert "cannot read" in err
 
 
 def test_latin1_file_exits_2_in_process(monkeypatch, tmp_path):
-    bad = tmp_path / "bad.weft"
+    bad = tmp_path / "bad.tn"
     bad.write_bytes(b'print("caf\xe9")\n')
     rc, out, err = call_main(monkeypatch, ["check", str(bad)])
     assert rc == 2
@@ -302,7 +302,7 @@ def test_old_python_is_rejected(monkeypatch):
 
 def test_keyboard_interrupt_boundary_returns_130(monkeypatch):
     """Ctrl-C during a command hits the dispatch boundary: exit 130, clean message."""
-    import weft.cli as climod
+    import tantu.cli as climod
     monkeypatch.setattr(climod, "run_text", _raiser(KeyboardInterrupt))
     original = signal.getsignal(signal.SIGINT)   # main()'s handler sets SIG_IGN in THIS process;
     try:                                         # restore after so later subprocess children (which
@@ -316,7 +316,7 @@ def test_keyboard_interrupt_boundary_returns_130(monkeypatch):
 
 def test_internal_error_boundary_returns_2(monkeypatch):
     """Any other unexpected exception degrades to a one-line internal-error diagnostic."""
-    import weft.cli as climod
+    import tantu.cli as climod
     monkeypatch.setattr(climod, "run_text", _raiser(RuntimeError("synthetic bug")))
     rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1)\n")
     assert rc == 2
@@ -327,7 +327,7 @@ def test_internal_error_boundary_returns_2(monkeypatch):
 
 def test_system_exit_propagates(monkeypatch):
     """SystemExit is re-raised, not swallowed by the catch-all boundary."""
-    import weft.cli as climod
+    import tantu.cli as climod
     monkeypatch.setattr(climod, "run_text", _raiser(SystemExit(7)))
     monkeypatch.setattr(sys, "stdout", io.StringIO())
     monkeypatch.setattr(sys, "stderr", io.StringIO())
@@ -338,7 +338,7 @@ def test_system_exit_propagates(monkeypatch):
 
 def test_stdin_read_failure_returns_2(monkeypatch):
     """When the stdin read fails (invalid UTF-8), main exits 2 without dispatching."""
-    import weft.cli as climod
+    import tantu.cli as climod
     monkeypatch.setattr(climod, "_read_target", lambda *a, **k: None)
     rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="")
     assert rc == 2
@@ -348,22 +348,22 @@ def test_stdin_read_failure_returns_2(monkeypatch):
 
 
 def test_read_target_reads_file(tmp_path):
-    from weft.cli import _read_target
-    f = tmp_path / "a.weft"
+    from tantu.cli import _read_target
+    f = tmp_path / "a.tn"
     f.write_text('print("x")\n')
     assert _read_target(str(f), io.StringIO()) == ('print("x")\n', str(f))
 
 
 def test_read_target_missing_file():
-    from weft.cli import _read_target
+    from tantu.cli import _read_target
     err = io.StringIO()
-    assert _read_target("/no/such/file.weft", err) is None
+    assert _read_target("/no/such/file.tn", err) is None
     assert "cannot read" in err.getvalue()
 
 
 def test_read_target_latin1_file(tmp_path):
-    from weft.cli import _read_target
-    bad = tmp_path / "bad.weft"
+    from tantu.cli import _read_target
+    bad = tmp_path / "bad.tn"
     bad.write_bytes(b'print("caf\xe9")\n')
     err = io.StringIO()
     assert _read_target(str(bad), err) is None
@@ -374,12 +374,12 @@ def test_read_target_latin1_file(tmp_path):
 
 
 def _run_with_closed_stdout(prog_path):
-    """Spawn `weft run <file>` with a piped stdout whose read end we close at once, so the
-    child's output has nowhere to go — the shell equivalent of `weft run x | head` where the
+    """Spawn `tantu run <file>` with a piped stdout whose read end we close at once, so the
+    child's output has nowhere to go — the shell equivalent of `tantu run x | head` where the
     consumer quit early. Returns (returncode, stderr_text). stderr is drained to EOF (child
     exit) before waiting so a hung child can't deadlock the read."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "weft", "run", str(prog_path)],
+        [sys.executable, "-m", "tantu", "run", str(prog_path)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
@@ -397,7 +397,7 @@ def _run_with_closed_stdout(prog_path):
 def test_broken_pipe_small_output_exits_141_silently(tmp_path):
     """Small, buffered output: the broken pipe surfaces at main()'s explicit stdout flush.
     It must be a silent exit 141, never the shutdown-time 'Exception ignored ... BrokenPipeError'."""
-    prog = tmp_path / "hi.weft"
+    prog = tmp_path / "hi.tn"
     prog.write_text('print("hello")\n')
     rc, err = _run_with_closed_stdout(prog)
     assert rc == 141, err
@@ -409,7 +409,7 @@ def test_broken_pipe_large_output_exits_141_silently(tmp_path):
     """A program that prints far more than the OS pipe buffer (>64KB): the broken pipe is
     raised mid-stream inside a VM print — the path that used to be miscaught as an
     'internal error' exit 2. It must exit 141 with a clean stderr."""
-    prog = tmp_path / "big.weft"
+    prog = tmp_path / "big.tn"
     prog.write_text(
         "fn main():\n"
         "    var i = 0\n"
@@ -429,10 +429,10 @@ def test_broken_pipe_large_output_exits_141_silently(tmp_path):
 
 
 def _run_argv_closed_stdout(argv):
-    """Spawn `weft <argv>` and close stdout's read end at once, like a consumer that quit.
+    """Spawn `tantu <argv>` and close stdout's read end at once, like a consumer that quit.
     Drains stderr to EOF before waiting. Returns (returncode, stderr_text)."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "weft", *argv],
+        [sys.executable, "-m", "tantu", *argv],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
@@ -448,7 +448,7 @@ def _run_argv_closed_stdout(argv):
 
 
 def test_version_broken_stdout_pipe_exits_141_silently():
-    """F1: `weft --version | closed-pipe`. The tiny version line is flushed inside main()'s
+    """F1: `tantu --version | closed-pipe`. The tiny version line is flushed inside main()'s
     boundary, so the broken pipe is a silent exit 141 — never a shutdown-time leak/exit 120."""
     rc, err = _run_argv_closed_stdout(["--version"])
     assert rc == 141, err
@@ -458,11 +458,11 @@ def test_version_broken_stdout_pipe_exits_141_silently():
 
 def test_check_error_broken_stderr_pipe_exits_141_silently(tmp_path):
     """F3: a compile error's diagnostic goes to stderr; if THAT pipe's read end is closed
-    (`weft check bad.weft 2>&1 | head -0`), the flush must be a silent 141, not an exit-120 leak."""
-    prog = tmp_path / "bad.weft"
+    (`tantu check bad.tn 2>&1 | head -0`), the flush must be a silent 141, not an exit-120 leak."""
+    prog = tmp_path / "bad.tn"
     prog.write_text("let x = undefined_name\n")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "weft", "check", str(prog)],
+        [sys.executable, "-m", "tantu", "check", str(prog)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
@@ -485,27 +485,27 @@ def test_check_error_broken_stderr_pipe_exits_141_silently(tmp_path):
 
 
 def _run_shell_with_closed_fd(cmd_tail, redirect):
-    """Run `python -m weft <cmd_tail>` through bash with a `2>&-`-style closed fd."""
+    """Run `python -m tantu <cmd_tail>` through bash with a `2>&-`-style closed fd."""
     return subprocess.run(
-        ["bash", "-c", f"'{sys.executable}' -m weft {cmd_tail} {redirect}"],
+        ["bash", "-c", f"'{sys.executable}' -m tantu {cmd_tail} {redirect}"],
         capture_output=True, timeout=60,
     ).returncode
 
 
 def test_closed_stderr_fd_successful_run_exits_0(tmp_path):
-    prog = tmp_path / "ok.weft"
+    prog = tmp_path / "ok.tn"
     prog.write_text('print("ok")\n')
     assert _run_shell_with_closed_fd(f"run '{prog}'", "2>&-") == 0
 
 
 def test_closed_stderr_fd_check_error_exits_2(tmp_path):
-    prog = tmp_path / "bad.weft"
+    prog = tmp_path / "bad.tn"
     prog.write_text("let x = undefined_name\n")
     assert _run_shell_with_closed_fd(f"check '{prog}'", "2>&-") == 2
 
 
 def test_closed_stdout_fd_successful_run_exits_0(tmp_path):
-    prog = tmp_path / "ok.weft"
+    prog = tmp_path / "ok.tn"
     prog.write_text('print("ok")\n')
     assert _run_shell_with_closed_fd(f"run '{prog}'", "1>&-") == 0
 
@@ -516,10 +516,10 @@ def test_sigint_with_broken_stdout_pipe_exits_130(tmp_path):
     'Exception ignored' at shutdown (the bug that turned this into exit 120). The program
     prints its marker once (buffered, never flushed) then spins silently, so no VM print
     ever hits the broken pipe first — keeping the exit deterministically 130, not 141."""
-    prog = tmp_path / "loop.weft"
+    prog = tmp_path / "loop.tn"
     prog.write_text(_LOOP_PROG)
     proc = subprocess.Popen(     # NOT -u: 'running\n' stays pending in the child's stdout buffer
-        [sys.executable, "-m", "weft", "run", str(prog)],
+        [sys.executable, "-m", "tantu", "run", str(prog)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
