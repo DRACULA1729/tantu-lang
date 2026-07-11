@@ -16,6 +16,46 @@ third-party runtime dependencies.
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`CONTRIBUTING.md`](CONTRIBUTING.md)
 if you want to hack on it.
 
+## Why Weft
+
+Every language I like makes me give something up. Python reads like pseudocode but
+catches nothing before it runs and has no concurrency primitives of its own. Go gives
+you cheap goroutines, then shares memory by default and only *asks* you not to race —
+the detector is opt-in and finds races at runtime, if you're lucky. Rust proves your
+concurrency is safe but charges you the borrow checker for the proof.
+
+Weft is a small answer to a narrow question: can a language read like Python, catch
+your mistakes before it runs, and make data races impossible without a borrow checker?
+
+It gets there with three constraints:
+
+- **No null.** Absence and failure are ordinary values (`Option`, `Result`), and the
+  checker won't let you ignore them. `match` and the `?` operator are the only ways through.
+- **Immutable by default.** `let` bindings and every collection are values; `push`
+  returns a new list. `var` buys you a reassignable binding and nothing more.
+- **No shared mutable state across fibers.** Capturing a `var` in a closure or a
+  spawned fiber is a compile error. Fibers talk over typed channels, never shared memory.
+
+That third rule is why Weft exists. A Weft program can't contain a data race — not
+because you were careful, but because the language took away the tools to write one.
+You get Go's concurrency ergonomics (`spawn`, `chan`, `select`) with a guarantee Go
+doesn't give you, for the price of one checker rule instead of an ownership system.
+
+### When to use it, and when not to
+
+Use Weft if you want a tiny statically-typed language with real concurrency that you
+can read end to end — for scripts, for exercises, or to see how these pieces fit
+together. The whole thing is pure Python with no runtime dependencies, and each stage
+(lexer, parser, checker, compiler, stack VM) is a small module you can read on its own.
+It's as much something to study as something to run.
+
+Don't use it if you need speed or a library ecosystem. It runs on a bytecode VM written
+in Python, with a cooperative, deterministic scheduler; it's built for correctness and
+clarity, not throughput. v1 is deliberately small: erased generics, one concurrency
+model, one way to handle errors. Need performance? Use Go or Rust. Need libraries? Use
+Python. Weft is for when you'd rather have a language you can hold in your head, with
+the safety properties above spelled out.
+
 ## A taste
 
 ```
