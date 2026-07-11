@@ -11,14 +11,14 @@ import io
 
 import pytest
 
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.checker import check
-from weft import ast_nodes as A
-from weft.resolve import ImportedGlobal
-from weft.cli import build_program
-from weft.errors import (
-    CheckErrors, WeftError,
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.checker import check
+from tantu import ast_nodes as A
+from tantu.resolve import ImportedGlobal
+from tantu.cli import build_program
+from tantu.errors import (
+    CheckErrors, TantuError,
     E_IMPORT_UNSUPPORTED, E_MODULE_NOT_FOUND, E_NOT_A_MODULE_MEMBER,
     E_MODULE_NOT_VALUE, E_IMPORT_CYCLE, E_UNSUPPORTED, E_VAR_CAPTURE,
 )
@@ -92,28 +92,28 @@ def _write(dir_, name: str, body: str):
 
 
 def test_build_program_links_and_runs(tmp_path):
-    _write(tmp_path, "lib.weft", "fn dbl(n: Int) -> Int:\n    n + n\nlet base = 10\n")
-    main = _write(tmp_path, "main.weft",
+    _write(tmp_path, "lib.tn", "fn dbl(n: Int) -> Int:\n    n + n\nlet base = 10\n")
+    main = _write(tmp_path, "main.tn",
                   "import lib\nfn main() -> Unit:\n    print(lib.dbl(lib.base))\n")
     err = io.StringIO()
     built = build_program(str(main), err)
     assert built is not None, err.getvalue()
     entry, srcs = built
-    assert "main.weft" in srcs and "lib.weft" in srcs
+    assert "main.tn" in srcs and "lib.tn" in srcs
 
 
 def test_build_program_missing_module(tmp_path):
-    main = _write(tmp_path, "main.weft", "import ghost\nlet x = 1\n")
+    main = _write(tmp_path, "main.tn", "import ghost\nlet x = 1\n")
     err = io.StringIO()
     assert build_program(str(main), err) is None
     assert E_MODULE_NOT_FOUND in err.getvalue()
 
 
 def test_build_program_detects_cycle(tmp_path):
-    _write(tmp_path, "a.weft", "import b\nlet x = 1\n")
-    _write(tmp_path, "b.weft", "import a\nlet y = 2\n")
+    _write(tmp_path, "a.tn", "import b\nlet x = 1\n")
+    _write(tmp_path, "b.tn", "import a\nlet y = 2\n")
     err = io.StringIO()
-    assert build_program(str(tmp_path / "a.weft"), err) is None
+    assert build_program(str(tmp_path / "a.tn"), err) is None
     assert E_IMPORT_CYCLE in err.getvalue()
 
 
@@ -145,8 +145,8 @@ def test_match_on_foreign_enum_without_wildcard_is_rejected_cleanly():
 
 def test_match_on_foreign_enum_end_to_end_exit_2(tmp_path):
     from harness import run_program
-    _write(tmp_path, "colorlib.weft", "enum Color:\n    Red\n    Green\nlet c = Red\n")
-    main = _write(tmp_path, "main.weft",
+    _write(tmp_path, "colorlib.tn", "enum Color:\n    Red\n    Green\nlet c = Red\n")
+    main = _write(tmp_path, "main.tn",
                   "import colorlib\nfn main() -> Unit:\n"
                   "    match colorlib.c:\n        _ => print(1)\n")
     out, err, code = run_program(main)
@@ -181,8 +181,8 @@ def test_reading_foreign_let_member_is_allowed():
 
 def test_reading_foreign_var_end_to_end_exit_2(tmp_path):
     from harness import run_program
-    _write(tmp_path, "varlib.weft", "var v = 1\nlet c = 2\n")
-    main = _write(tmp_path, "main.weft",
+    _write(tmp_path, "varlib.tn", "var v = 1\nlet c = 2\n")
+    main = _write(tmp_path, "main.tn",
                   "import varlib\nfn main() -> Unit:\n    print(varlib.v)\n")
     out, err, code = run_program(main)
     assert code == 2
@@ -193,7 +193,7 @@ def test_reading_foreign_var_end_to_end_exit_2(tmp_path):
 # --------------------------------------- W12: binding vs imported module name (§2.7)
 
 def test_binding_that_shadows_imported_module_is_rejected():
-    from weft.errors import E_DUPLICATE
+    from tantu.errors import E_DUPLICATE
     syms = _mathlib_symbols()
     assert E_DUPLICATE in _errors(
         "import mathlib\nlet mathlib = 1\n", imports={"mathlib": syms})

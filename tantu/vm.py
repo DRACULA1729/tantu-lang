@@ -17,15 +17,15 @@ import time
 from collections import deque
 from heapq import heappush, heappop
 
-from weft.bytecode import Op, Code
-from weft.errors import (
-    Span, WeftPanic, render_panic, render_span,
+from tantu.bytecode import Op, Code
+from tantu.errors import (
+    Span, TantuPanic, render_panic, render_span,
     R_DIV_BY_ZERO, R_UNINIT, R_MATCH_FAIL, R_INDEX_OUT_OF_RANGE,
     R_SEND_CLOSED, R_CLOSE_CLOSED, R_DEADLOCK, R_STEP_LIMIT, R_BUILTIN,
     R_STACK_OVERFLOW, R_BAD_CAP,
 )
-from weft.values import render, Closure, Builtin, Variant, Record, Channel
-from weft.prelude import builtin_impls
+from tantu.values import render, Closure, Builtin, Variant, Record, Channel
+from tantu.prelude import builtin_impls
 
 _UNINIT = object()   # sentinel for an unread global/local slot (checker guarantees def-before-use)
 
@@ -102,7 +102,7 @@ class Fiber:
         self.frames: list[Frame] = [frame]
         self.stack: list = []
         self.state = State.READY
-        self.pending_panic: WeftPanic | None = None   # e.g. a parked sender woken by close
+        self.pending_panic: TantuPanic | None = None   # e.g. a parked sender woken by close
 
 
 class VM:
@@ -110,7 +110,7 @@ class VM:
                  clock=time.monotonic, sleep_fn=time.sleep,
                  max_frames: int = 100000) -> None:
         self.budget = budget
-        self.max_frames = max_frames            # Weft call-stack depth cap (R010 on overflow)
+        self.max_frames = max_frames            # Tantu call-stack depth cap (R010 on overflow)
         self.stdout = stdout if stdout is not None else sys.stdout
         self.clock = clock                       # injected; tests use a virtual clock
         self.sleep_fn = sleep_fn                 # injected idle sleep
@@ -182,7 +182,7 @@ class VM:
                     self.registry.pop(fib.fid, None)     # prune: registry holds live fibers only
                     if fib.fid == 0:
                         return 0             # main done → program exits, other fibers dropped
-        except WeftPanic as p:
+        except TantuPanic as p:
             trace = self._trace(self.current, p)
             text = render_panic(self.srcs, trace[:_TRACE_FRAMES], p)
             if len(trace) > _TRACE_FRAMES:   # runaway stacks: innermost frames + a count
@@ -248,7 +248,7 @@ class VM:
         self._wake(s.fiber, (s.case_index, None))                # select send arm: Unit payload
         return s.value
 
-    def _trace(self, fiber: Fiber, panic: WeftPanic) -> list[tuple[str, Span | None]]:
+    def _trace(self, fiber: Fiber, panic: TantuPanic) -> list[tuple[str, Span | None]]:
         trace: list[tuple[str, Span | None]] = []
         for frame in reversed(fiber.frames):
             idx = frame.ip - 1
@@ -282,7 +282,7 @@ class VM:
             if self.step_limit is not None:
                 self._steps += 1
                 if self._steps > self.step_limit:
-                    raise WeftPanic(R_STEP_LIMIT,
+                    raise TantuPanic(R_STEP_LIMIT,
                                     f"execution step limit reached ({self.step_limit} instructions)")
             frame = fiber.frames[-1]             # re-fetch: CALL/RETURN/SPAWN swap frames
             instr = frame.code.instrs[frame.ip]
@@ -302,13 +302,13 @@ class VM:
             elif op is Op.DIV:
                 b = stack.pop(); a = stack.pop()
                 if b == 0:
-                    raise WeftPanic(R_DIV_BY_ZERO, "division or modulo by zero",
+                    raise TantuPanic(R_DIV_BY_ZERO, "division or modulo by zero",
                                     frame.code.spans[frame.ip - 1])
                 stack.append(a // b if (isinstance(a, int) and isinstance(b, int)) else a / b)
             elif op is Op.MOD:
                 b = stack.pop(); a = stack.pop()
                 if b == 0:
-                    raise WeftPanic(R_DIV_BY_ZERO, "division or modulo by zero",
+                    raise TantuPanic(R_DIV_BY_ZERO, "division or modulo by zero",
                                     frame.code.spans[frame.ip - 1])
                 stack.append(a % b)
             elif op is Op.NEG:
@@ -316,7 +316,7 @@ class VM:
             elif op is Op.LOAD_GLOBAL:
                 v = self.globals[instr.arg]
                 if v is _UNINIT:
-                    raise WeftPanic(R_UNINIT, "value used before initialization",
+                    raise TantuPanic(R_UNINIT, "value used before initialization",
                                     frame.code.spans[frame.ip - 1])
                 stack.append(v)
             elif op is Op.STORE_GLOBAL:
@@ -324,7 +324,7 @@ class VM:
             elif op is Op.LOAD_LOCAL:
                 v = frame.locals[instr.arg]
                 if v is _UNINIT:
-                    raise WeftPanic(R_UNINIT, "value used before initialization",
+                    raise TantuPanic(R_UNINIT, "value used before initialization",
                                     frame.code.spans[frame.ip - 1])
                 stack.append(v)
             elif op is Op.STORE_LOCAL:
@@ -343,7 +343,7 @@ class VM:
                 callee = stack[base]
                 if isinstance(callee, Closure):
                     if len(fiber.frames) >= self.max_frames:
-                        raise WeftPanic(R_STACK_OVERFLOW,
+                        raise TantuPanic(R_STACK_OVERFLOW,
                                         f"call stack overflow ({self.max_frames} frames)",
                                         frame.code.spans[frame.ip - 1])
                     code = callee.code
@@ -359,10 +359,10 @@ class VM:
                     # R009 panic at the call site instead of a raw Python traceback.
                     try:
                         result = self.builtins[callee.name](*args)
-                    except WeftPanic:
+                    except TantuPanic:
                         raise
                     except Exception as ex:
-                        raise WeftPanic(R_BUILTIN, f"{callee.name}: {ex}",
+                        raise TantuPanic(R_BUILTIN, f"{callee.name}: {ex}",
                                         frame.code.spans[frame.ip - 1])
                     stack.append(result)
                 else:
@@ -385,7 +385,7 @@ class VM:
             elif op is Op.UNPACK_VARIANT:
                 stack.extend(stack.pop().fields)
             elif op is Op.MATCH_FAIL:
-                raise WeftPanic(R_MATCH_FAIL, "non-exhaustive match",
+                raise TantuPanic(R_MATCH_FAIL, "non-exhaustive match",
                                 frame.code.spans[frame.ip - 1])
             elif op is Op.BUILD_LIST:
                 n = instr.arg
@@ -402,7 +402,7 @@ class VM:
             elif op is Op.INDEX:
                 i = stack.pop(); xs = stack.pop()
                 if i < 0 or i >= len(xs):
-                    raise WeftPanic(R_INDEX_OUT_OF_RANGE, f"list index out of range: {i}",
+                    raise TantuPanic(R_INDEX_OUT_OF_RANGE, f"list index out of range: {i}",
                                     frame.code.spans[frame.ip - 1])
                 stack.append(xs[i])
             elif op is Op.GET_FIELD:
@@ -456,14 +456,14 @@ class VM:
             elif op is Op.CHAN_NEW:
                 cap = stack.pop()
                 if cap < 0:
-                    raise WeftPanic(R_BAD_CAP,
+                    raise TantuPanic(R_BAD_CAP,
                                     f"channel capacity cannot be negative ({cap})",
                                     frame.code.spans[frame.ip - 1])
                 stack.append(Channel(cap))
             elif op is Op.CHAN_SEND:
                 v = stack.pop(); c = stack.pop()
                 if c.closed:
-                    raise WeftPanic(R_SEND_CLOSED, "send on closed channel",
+                    raise TantuPanic(R_SEND_CLOSED, "send on closed channel",
                                     frame.code.spans[frame.ip - 1])
                 r = self._pop_live_receiver(c)
                 if r is not None:
@@ -495,7 +495,7 @@ class VM:
             elif op is Op.CHAN_CLOSE:
                 c = stack.pop()
                 if c.closed:
-                    raise WeftPanic(R_CLOSE_CLOSED, "close of closed channel",
+                    raise TantuPanic(R_CLOSE_CLOSED, "close of closed channel",
                                     frame.code.spans[frame.ip - 1])
                 c.closed = True
                 while c.recv_wait:                        # wake receivers with None (drop tombstones)
@@ -514,7 +514,7 @@ class VM:
                     else:
                         continue                          # tombstone: another arm already fired
                     sframe = sf.frames[-1]
-                    sf.pending_panic = WeftPanic(R_SEND_CLOSED, "send on closed channel",
+                    sf.pending_panic = TantuPanic(R_SEND_CLOSED, "send on closed channel",
                                                  sframe.code.spans[sframe.ip - 1])
                     sf.state = State.READY
                     self.ready.append(sf)
@@ -555,7 +555,7 @@ class VM:
                             chosen = (i, _NONE); break     # closed channel → arm fires with None
                     else:                                 # send arm — mirror CHAN_SEND ready paths
                         if c.closed:
-                            raise WeftPanic(R_SEND_CLOSED, "send on closed channel",
+                            raise TantuPanic(R_SEND_CLOSED, "send on closed channel",
                                             frame.code.spans[frame.ip - 1])
                         r = self._pop_live_receiver(c)
                         if r is not None:

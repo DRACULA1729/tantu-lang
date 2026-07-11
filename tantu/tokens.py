@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from weft.errors import Span
+from tantu.errors import Span
 
 
 class TokenType(enum.Enum):

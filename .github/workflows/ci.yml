@@ -30,16 +30,16 @@ jobs:
           set -u
           fail=0
           count=0
-          for f in examples/*.weft; do
+          for f in examples/*.tn; do
             count=$((count + 1))
-            echo "=== weft check $f ==="
-            if ! weft check "$f"; then
-              echo "FAIL: weft check $f exited non-zero"
+            echo "=== tantu check $f ==="
+            if ! tantu check "$f"; then
+              echo "FAIL: tantu check $f exited non-zero"
               fail=1
             fi
-            echo "=== weft run $f ==="
-            if ! weft run "$f"; then
-              echo "FAIL: weft run $f exited non-zero"
+            echo "=== tantu run $f ==="
+            if ! tantu run "$f"; then
+              echo "FAIL: tantu run $f exited non-zero"
               fail=1
             fi
           done

@@ -1,7 +1,7 @@
 [project]
-name = "weft"
+name = "tantu"
 dynamic = ["version"]
-description = "Weft — a statically-typed, Python-readable language with fibers + channels, compiled to bytecode and run on a hand-built stack VM."
+description = "Tantu — a statically-typed, Python-readable language with fibers + channels, compiled to bytecode and run on a hand-built stack VM."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [{name = "DRACULA1729", email = "110762985+DRACULA1729@users.noreply.github.com"}]
@@ -20,13 +20,13 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/DRACULA1729/weft-lang"
-Repository = "https://github.com/DRACULA1729/weft-lang"
-Issues = "https://github.com/DRACULA1729/weft-lang/issues"
-Changelog = "https://github.com/DRACULA1729/weft-lang/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/DRACULA1729/tantu-lang"
+Repository = "https://github.com/DRACULA1729/tantu-lang"
+Issues = "https://github.com/DRACULA1729/tantu-lang/issues"
+Changelog = "https://github.com/DRACULA1729/tantu-lang/blob/main/CHANGELOG.md"
 
 [project.scripts]
-weft = "weft.cli:main"
+tantu = "tantu.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest==8.3.4", "pytest-cov"]
@@ -36,10 +36,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["weft"]
+packages = ["tantu"]
 
 [tool.setuptools.dynamic]
-version = {attr = "weft.__version__"}
+version = {attr = "tantu.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

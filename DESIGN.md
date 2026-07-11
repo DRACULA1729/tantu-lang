@@ -1,4 +1,4 @@
-# Weft — Language & Toolchain Design (v1.2)
+# Tantu — Language & Toolchain Design (v1.2)
 
 > **Status**: LOCKED design contract for the implementation phase.
 > **v1.1**: consistency refinement of v1 — fixed contradictions between examples, grammar, and
@@ -18,13 +18,14 @@
 
 ## 1. Language Identity
 
-### Name: **Weft**
+### Name: **Tantu**
 
-The weft is the thread woven *across* the loom. Weft is a language where threads are woven
+*Tantu* (Sanskrit तन्तु) is the word for a thread or fiber — from the root *tan*, "to stretch",
+the same root that gives *tantra*, the loom. Tantu is a language where threads are woven
 in, not bolted on: lightweight fibers and channels are language primitives, the type system
 refuses to let null or unhandled errors through, and everything reads like pseudocode.
 
-**Philosophy.** Weft blends four things that rarely coexist: Python's visual clarity
+**Philosophy.** Tantu blends four things that rarely coexist: Python's visual clarity
 (indentation, no ceremony), Rust/TypeScript's compile-time safety (static types, no null —
 `Option`/`Result` instead), Go's concurrency ergonomics (spawn a fiber, talk over a channel),
 and a functional core (immutable by default, pattern matching, expression-oriented,
@@ -33,20 +34,20 @@ model, one way to handle errors. Correctness and clarity beat speed everywhere. 
 implementation is itself a teaching artifact — every pipeline stage is a small, separately
 testable Python module with an explicit data contract.
 
-File extension: `.weft`. CLI: `python -m weft run file.weft` (`run -` reads stdin),
-`python -m weft check file.weft` (static check only), `python -m weft` (REPL),
-`python -m weft dis file.weft` (disassembler), `python -m weft --version`.
+File extension: `.tn`. CLI: `python -m tantu run file.tn` (`run -` reads stdin),
+`python -m tantu check file.tn` (static check only), `python -m tantu` (REPL),
+`python -m tantu dis file.tn` (disassembler), `python -m tantu --version`.
 
 ### Hello world
 
-```weft
+```tantu
 fn main() -> Unit:
     print("hello, world")
 ```
 
 ### Showcase (real committed syntax — types, pattern matching, functions, concurrency)
 
-```weft
+```tantu
 enum Shape:
     Circle(Float)
     Rect(Float, Float)
@@ -127,9 +128,9 @@ indentation but the parser expected `{}`. Rules that keep it simple:
 
 ### 2.4 Bindings — immutable by default
 
-```weft
+```tantu
 let x = 10                 # immutable, type inferred: Int
-let name: Str = "weft"     # optional annotation (required where inference can't decide)
+let name: Str = "tantu"     # optional annotation (required where inference can't decide)
 var count = 0              # mutable — the ONLY way to get mutability
 count = count + 1          # reassignment: allowed only for `var`; `=` on a `let` is a compile error
 ```
@@ -146,7 +147,7 @@ count = count + 1          # reassignment: allowed only for `var`; `=` on a `let
 
 ### 2.5 Functions
 
-```weft
+```tantu
 fn add(a: Int, b: Int) -> Int:
     a + b                          # last expression of the body is the return value
 
@@ -176,7 +177,7 @@ let clamp = fn(x: Int) -> Int:             # anonymous fn, block body (same rule
 
 ### 2.6 Control flow — expression-oriented
 
-```weft
+```tantu
 let grade = if score >= 90: "A" elif score >= 80: "B" else: "C"
 
 let y = if x > 0:                  # block-form if in expression position:
@@ -211,7 +212,7 @@ loop:                              # infinite loop; exit with break
 
 ### 2.7 Enums (ADTs), structs, pattern matching
 
-```weft
+```tantu
 enum Color:
     Red
     Green
@@ -259,16 +260,16 @@ binding plus comparisons) in v1; guards/or/struct patterns are post-v1 candidate
 ### 2.8 Option, Result, and error propagation — no null, no exceptions
 
 `Option[T]` and `Result[T, E]` are ordinary prelude enums, special only in that `?` knows
-them. The sketch below is **not Weft syntax** (v1 has neither user generics nor `|` variant
+them. The sketch below is **not Tantu syntax** (v1 has neither user generics nor `|` variant
 lists) — these types are pre-registered in the checker's prelude environment (§3.3), never
 parsed from source:
 
-```weft
+```tantu
 enum Option[T]:  Some(T) | None          # conceptual only — not parseable v1 syntax
 enum Result[T, E]:  Ok(T) | Err(E)       # conceptual only — not parseable v1 syntax
 ```
 
-```weft
+```tantu
 fn find_user(id: Int) -> Option[Str]:
     if id == 1: Some("ada") else: None
 
@@ -300,7 +301,7 @@ A panic prints a message plus the fiber's stack trace and terminates the **whole
 
 ### 2.9 Collections
 
-```weft
+```tantu
 let xs: List[Int] = [1, 2, 3]      # annotation optional when elements infer it
 let ys = push(xs, 4)               # NEW list [1,2,3,4]; xs unchanged
 let n  = len(xs)
@@ -320,7 +321,7 @@ lists.
 
 ### 2.10 Concurrency syntax
 
-```weft
+```tantu
 let c = chan[Int]()        # unbuffered (rendezvous) channel
 let d = chan[Int](16)      # buffered, capacity 16
 
@@ -429,7 +430,7 @@ that is not followed by `->` is a parse error that points at `Unit`.
 
 ### 3.1 What is checked, and where
 
-Type checking is a **dedicated pass** (`weft/checker.py`) that runs on the AST **after
+Type checking is a **dedicated pass** (`tantu/checker.py`) that runs on the AST **after
 parsing and before bytecode compilation**. The compiler stage *asserts* it only ever sees a
 checked AST. Nothing about types survives into the VM — the VM trusts the checker
 (erasure), which is what lets runtime values be plain Python objects.
@@ -461,7 +462,7 @@ first-error-only):
   expressions. A builtin's registry entry is a *list* of signatures tried in order; the
   first that unifies wins (error if none). `len` is the only multi-entry builtin in v1.
 
-### 3.3 Type representation (`weft/wtypes.py`)
+### 3.3 Type representation (`tantu/ttypes.py`)
 
 ```python
 # frozen dataclasses; structural equality is type equality
@@ -564,7 +565,7 @@ unit-testable with golden outputs. (Parallelism via multiple VM processes is out
 - **Exit**: when the main fiber's outermost frame returns, the program exits (code 0);
   remaining fibers are discarded. A panic in *any* fiber exits the program (code 1).
 
-### 4.4 Channel semantics (`weft/values.py: Channel`)
+### 4.4 Channel semantics (`tantu/values.py: Channel`)
 
 ```
 Channel: buf: deque, cap: int (0 = unbuffered), closed: bool,
@@ -605,7 +606,7 @@ data structures need no synchronization.
 `select` is an **expression** that waits on several channel operations at once and runs the
 arm of the first one that can proceed:
 
-```weft
+```tantu
 let msg: Option[Int] = select:                    # annotation required — `None` needs the expected type
     v = recv(data)     => v                       # v: Option[Int] — recv's normal contract
     send(out, answer)  => Some(0)                 # fires when out can accept answer
@@ -660,7 +661,7 @@ on a timeout channel, then selecting over data + timeout channels.
 
 ### 5.1 Value representation (erased types — checker guarantees soundness)
 
-| Weft value | Python runtime representation |
+| Tantu value | Python runtime representation |
 |---|---|
 | Int / Float / Bool / Str | native `int` / `float` / `bool` / `str` |
 | Unit | `None` |
@@ -677,7 +678,7 @@ must be *distinct* Python types because types are erased and `render()` (Appendi
 them differently (`[1, 2]` vs `(1, 2)`). `Variant`/`Record`/`Closure` are
 `@dataclass(frozen=True, slots=True)`.
 
-### 5.2 The `Code` object (`weft/bytecode.py`) — the compiler↔VM contract
+### 5.2 The `Code` object (`tantu/bytecode.py`) — the compiler↔VM contract
 
 ```python
 @dataclass
@@ -765,7 +766,7 @@ LOAD_CONST 1; ADD; STORE_LOCAL h_i; JUMP head`. `continue` jumps to the incremen
 to `end`. Safe because lists are immutable; `item` behaves as a fresh `let` per iteration
 (capture is by value).
 
-### 5.4 Frames, fibers, and the dispatch loop (`weft/vm.py`)
+### 5.4 Frames, fibers, and the dispatch loop (`tantu/vm.py`)
 
 ```python
 class Frame:  code: Code; ip: int; locals: list; closure: Closure|None; stack_base: int
@@ -797,7 +798,7 @@ def execute(self, fiber, budget):
 ```
 
 Dispatch is a plain `if/elif` chain ordered by expected frequency (or `match` on IntEnum) —
-measured-fast-enough for Python, trivially debuggable. Panic = a Python `WeftPanic`
+measured-fast-enough for Python, trivially debuggable. Panic = a Python `TantuPanic`
 exception carrying the message; caught once in `run()`, rendered with the fiber's stack
 trace built from `frames[*].code.name` + `spans[ip - 1]` — ip is post-incremented, so ip-1
 is the instruction in flight: the CALL for caller frames, the faulting/parking op for the
@@ -813,7 +814,7 @@ the fiber stack to `stack_base` (assert it already equals it — a cheap VM inva
 the frame, pushes the return value onto the caller's stack. Builtins are called synchronously
 in Python (they never block; all blocking ops are opcodes).
 
-**Entry point**: for `weft run`, the compiler appends a `<module>` epilogue after top-level
+**Entry point**: for `tantu run`, the compiler appends a `<module>` epilogue after top-level
 code: `LOAD_GLOBAL <main>; CALL 0; POP; HALT` — checker error if no `main() -> Unit` exists
 in run mode (pure top-level scripts are fine in M1–M2 before functions land; REPL and `dis`
 emit just `HALT`). Spawned fibers end via `RETURN` of their seeded frame; only `<module>`
@@ -830,15 +831,15 @@ the previous stage's output type. Cross-stage types live in exactly one home eac
 ### 6.1 Package layout
 
 ```
-weft/
+tantu/
   __init__.py
-  __main__.py        # python -m weft  → cli.main()
+  __main__.py        # python -m tantu  → cli.main()
   cli.py             # arg parsing: run | check | dis | repl(default); wires pipeline; renders errors
-  errors.py          # Span; WeftError(stage, msg, span, hint); error-code registry (App. C); render_error(src, err) -> str
+  errors.py          # Span; TantuError(stage, msg, span, hint); error-code registry (App. C); render_error(src, err) -> str
   tokens.py          # TokenType(enum), Token — NO logic
   lexer.py           # tokenize()
   ast_nodes.py       # all AST dataclasses (NOT 'ast' — never shadow a stdlib name; attempt #1 had AST.py beside 'import ast')
-  wtypes.py          # Type dataclasses (§3.3) + prelude type environment (NOT 'types' — stdlib shadow; 'dataclasses' itself imports 'types')
+  ttypes.py          # Type dataclasses (§3.3) + prelude type environment (NOT 'types' — stdlib shadow; 'dataclasses' itself imports 'types')
   parser.py          # parse()
   checker.py         # check()  (name resolution + types + exhaustiveness, one pass)
   bytecode.py        # Op, Instr, Code, dis()
@@ -861,18 +862,18 @@ message. `--version` ships from M1 (it is three lines).
 |---|---|---|---|---|---|
 | 1 | Lexer | `tokenize(src: str, file: str) -> list[Token]` | source text | tokens, ending `[..., NEWLINE?, DEDENT*, EOF]` | `LexError` |
 | 2 | Parser | `parse(tokens: list[Token]) -> Module` | token list | AST `Module(decls, span)` | `ParseError` |
-| 3 | Checker | `check(m: Module, env: Prelude) -> Module` | AST | **same** AST, fully annotated (§3.5) | `CheckErrors([WeftError])` — collected |
+| 3 | Checker | `check(m: Module, env: Prelude) -> Module` | AST | **same** AST, fully annotated (§3.5) | `CheckErrors([TantuError])` — collected |
 | 4 | Compiler | `compile_module(m: Module) -> Code` | checked AST | `Code` for `<module>` (nested `Code`s in consts) | none (asserts only) |
-| 5 | VM | `VM(...).run(code: Code) -> int` | `Code` | exit status; side effects on injected stdout | `WeftPanic` handled internally |
+| 5 | VM | `VM(...).run(code: Code) -> int` | `Code` | exit status; side effects on injected stdout | `TantuPanic` handled internally |
 
 `Token = (type: TokenType, lexeme: str, value: int|float|str|None, span: Span)` — frozen.
 AST nodes: mutable dataclasses, every node has `span: Span`; expressions add
-`ty: Type|None = None`. All errors subclass `WeftError` and are rendered by ONE function
+`ty: Type|None = None`. All errors subclass `TantuError` and are rendered by ONE function
 (`errors.render_error`) that prints the offending source line with a caret — every stage,
 same format, from Milestone 1 onward. Process exit codes: **0** success, **1** panic,
 **2** compile-time error (lex/parse/check), **130** interrupted (Ctrl-C during
 `run`/`check`/`dis`; the REPL instead prints `KeyboardInterrupt` and continues),
-**141** broken output pipe (stdout or stderr) — the consumer went away (e.g. `weft run x | head`; 128 + SIGPIPE, silent). Rendered errors print paths relative to the CWD
+**141** broken output pipe (stdout or stderr) — the consumer went away (e.g. `tantu run x | head`; 128 + SIGPIPE, silent). Rendered errors print paths relative to the CWD
 so golden `.err` files are machine-independent.
 
 ### 6.3 Data-flow invariants (enforced by tests)
@@ -909,15 +910,15 @@ prior context, in focused evenings/weekends (1 wk-end ≈ 2 days).
 
 | M | Name | Builds | Acceptance test | Effort |
 |---|------|--------|-----------------|--------|
-| **M1** | Arithmetic REPL, end-to-end | Full skeleton of ALL modules in §6.1 (checker is pass-through returning Int for everything). Lexer: ints, floats, IDENT, `+-*/%(),`, NEWLINE, EOF (INDENT machinery present but only exercised trivially). Parser: expression ladder incl. call postfix. Compiler: consts+arith; `print(expr)` recognized as intrinsic and lowered to `PRINT` (no `CALL` op until M3); `HALT`. VM: single fiber, one implicit `<module>` frame, no CALL/RETURN. REPL + `run` + `dis` CLI, `--version`. Error rendering with carets. | `echo 'print(1 + 2 * 3)' \| python -m weft run -` prints `7`; `print(10 / 0)` panics with caret’d one-frame trace; 6+ golden run tests, 3+ golden error tests pass. | 1 wk-end |
-| **M2** | Bindings, Bool/Str, if/while, real type checking | `let/var`, assignment rules, `Bool/Str/Unit` types, comparisons, `and/or/not`, if (stmt+expr), `elif`, `while/break/continue`, blocks ⇒ **INDENT/DEDENT fully live**, real checker (env stack, inference in bodies; `print`/`str` typed ad hoc — accept any argument — until M4's mini-unifier), `LOAD/STORE_LOCAL/GLOBAL`, jumps, `weft check` CLI mode. | FizzBuzz runs (pinned as `tests/golden/run/fizzbuzz.weft` — per-branch prints, no `str()`, which would need M3's CALL); `let x = 1` then `x = 2` yields exact error `cannot assign to immutable binding 'x'`; `if 1:` rejected (`condition must be Bool`); type errors are collected (2 errors in one file → both reported). | 1–2 wk-ends |
+| **M1** | Arithmetic REPL, end-to-end | Full skeleton of ALL modules in §6.1 (checker is pass-through returning Int for everything). Lexer: ints, floats, IDENT, `+-*/%(),`, NEWLINE, EOF (INDENT machinery present but only exercised trivially). Parser: expression ladder incl. call postfix. Compiler: consts+arith; `print(expr)` recognized as intrinsic and lowered to `PRINT` (no `CALL` op until M3); `HALT`. VM: single fiber, one implicit `<module>` frame, no CALL/RETURN. REPL + `run` + `dis` CLI, `--version`. Error rendering with carets. | `echo 'print(1 + 2 * 3)' \| python -m tantu run -` prints `7`; `print(10 / 0)` panics with caret’d one-frame trace; 6+ golden run tests, 3+ golden error tests pass. | 1 wk-end |
+| **M2** | Bindings, Bool/Str, if/while, real type checking | `let/var`, assignment rules, `Bool/Str/Unit` types, comparisons, `and/or/not`, if (stmt+expr), `elif`, `while/break/continue`, blocks ⇒ **INDENT/DEDENT fully live**, real checker (env stack, inference in bodies; `print`/`str` typed ad hoc — accept any argument — until M4's mini-unifier), `LOAD/STORE_LOCAL/GLOBAL`, jumps, `tantu check` CLI mode. | FizzBuzz runs (pinned as `tests/golden/run/fizzbuzz.tn` — per-branch prints, no `str()`, which would need M3's CALL); `let x = 1` then `x = 2` yields exact error `cannot assign to immutable binding 'x'`; `if 1:` rejected (`condition must be Bool`); type errors are collected (2 errors in one file → both reported). | 1–2 wk-ends |
 | **M3** | Functions & closures | `fn` decls, calls, recursion, anonymous `fn`, function types, two-pass module checking, `MAKE_CLOSURE/CALL/RETURN`, frames, capture-by-value, `var`-capture error, stack traces through frames. | Recursive `fib(20)` = 6765; mutual recursion `is_even/is_odd`; an adder factory works (`make_adder(3)(4)` = 7 — a returned closure capturing `let n`); a counter-factory over a captured `var` produces the specified compile error (mutable captured state is impossible by design, §2.4); wrong-arity call is a compile error. | 1–2 wk-ends |
 | **M4** | Enums, Option/Result, `match` | `enum` decls, variant construction, prelude Option/Result, builtin-generics mini-unifier (§3.2 — needed *here* by `Some`/`Ok`/`Err`, not M5), `match` with nested patterns, **exhaustiveness + unreachable-arm checking** (full nested checking; reference: Maranget's pattern-matrix algorithm — the hardest single algorithm in the project), `MAKE/TEST/UNPACK_VARIANT`, structural equality, `render()` prints `Some(3)`-style. | Showcase `Shape/area` program (minus fibers) runs; omitting `Green` from a Color match yields `missing: Green`; nested `Some((a, b))` match works; golden dis-test locks match compilation shape. | 2–3 wk-ends |
-| **M5** | Collections, structs, `for`, stdlib-lite | `List[T]` literals/`INDEX`/builtins (`len,push,get,range,concat`), tuples + destructuring `let`, `struct` + field access, `for x in xs`, Str builtins (`split,substring,chars,parse_int`) — the mini-unifier already landed in M4. | Word-frequency program (pinned as `examples/wordfreq.weft`; assoc-list fold, counts printed in first-occurrence order) matches golden output; `xs[99]` panics, `get(xs,99)` is `None`; a `for` loop accumulating `range(0,101)` into a `var` prints 5050. | 1–2 wk-ends |
+| **M5** | Collections, structs, `for`, stdlib-lite | `List[T]` literals/`INDEX`/builtins (`len,push,get,range,concat`), tuples + destructuring `let`, `struct` + field access, `for x in xs`, Str builtins (`split,substring,chars,parse_int`) — the mini-unifier already landed in M4. | Word-frequency program (pinned as `examples/wordfreq.tn`; assoc-list fold, counts printed in first-occurrence order) matches golden output; `xs[99]` panics, `get(xs,99)` is `None`; a `for` loop accumulating `range(0,101)` into a `var` prints 5050. | 1–2 wk-ends |
 | **M6** | Error handling: `?` and panics | `?` on Result and Option (desugar in compiler), checker rules from §2.8, panic machinery finalized (message + full fiber stack trace + exit 1), `render_error` polish. | A 3-level `Result` pipeline propagates an `Err` from the bottom to `main`; using `?` on `Result` in an `Option` fn is a compile error; panic trace shows 3 frames with line numbers. | 1 wk-end |
 | **M7** | Concurrency: fibers + channels | `Fiber/Scheduler/Channel`, budget preemption, `spawn`, `chan/send/recv/close/sleep`, timer heap, deadlock detection, `ChanT` checking, spawn-must-return-Unit rule. | Showcase program (§1) prints its two lines **in order**; unbuffered ping-pong (2 fibers, 10 round trips) golden-matches with `budget=1`; recv-on-never-sent panics `deadlock`; fan-in works (3 producers each send N values on a shared channel then signal on a `done` channel; main recvs `done` 3 times, closes the shared channel, drains until `None`); all prior goldens still pass. | 2 wk-ends |
-| **M8** | Modules + toolchain polish | `import name` (sibling `name.weft`), qualified `name.fn` (checker disambiguates from field access via `Name` resolution), module cache + cycle error, module-level `let` init order, **two-level global addressing** (per-module global tables sized by `Code.n_globals` — touches compiler *and* VM; the single-table design of M1–M7 is the deliberate simplification this milestone lifts), `weft dis` on any function, README + 10-program `examples/`. | Two-file program where `main.weft` imports `shapes.weft` runs; import cycle reports both files; every example in `examples/` runs green in CI (the golden suite). | 2–3 wk-ends |
-| **M9** *(stretch)* | User generics OR `select` | Pick ONE: declaration-site generics for fns/enums, or `select` over channels. | Generic `map: (List[A],(A)->B)->List[B]` in Weft itself, or a timeout-with-select example. | 2 wk-ends |
+| **M8** | Modules + toolchain polish | `import name` (sibling `name.tn`), qualified `name.fn` (checker disambiguates from field access via `Name` resolution), module cache + cycle error, module-level `let` init order, **two-level global addressing** (per-module global tables sized by `Code.n_globals` — touches compiler *and* VM; the single-table design of M1–M7 is the deliberate simplification this milestone lifts), `tantu dis` on any function, README + 10-program `examples/`. | Two-file program where `main.tn` imports `shapes.tn` runs; import cycle reports both files; every example in `examples/` runs green in CI (the golden suite). | 2–3 wk-ends |
+| **M9** *(stretch)* | User generics OR `select` | Pick ONE: declaration-site generics for fns/enums, or `select` over channels. | Generic `map: (List[A],(A)->B)->List[B]` in Tantu itself, or a timeout-with-select example. | 2 wk-ends |
 
 Total to portfolio-complete (M1–M8): **~11–16 weekends (≈22–32 focused days)**, at the
 header's "1 wk-end ≈ 2 days". Ship after M8; M9 only if appetite remains.
@@ -937,7 +938,7 @@ header's "1 wk-end ≈ 2 days". Ship after M8; M9 only if appetite remains.
      node, e.g. `(if (> x 0) (block ...) ...)`) compared to expected strings — readable
      diffs, no brittle object graphs.
    - `test_checker.py`: positive typing cases assert `node.ty`; negative cases assert
-     error *codes + spans* (each WeftError has a stable code like `E0102-assign-immutable`;
+     error *codes + spans* (each TantuError has a stable code like `E0102-assign-immutable`;
      registry in Appendix C).
    - `test_compiler.py`: `compile_module(...).dis()` golden strings for canonical snippets
      (locks the ISA and match-compilation shape).
@@ -945,22 +946,22 @@ header's "1 wk-end ≈ 2 days". Ship after M8; M9 only if appetite remains.
      `stdout=StringIO`, including budget=1 interleaving tests and channel/timer unit tests.
 2. **Golden end-to-end** (the backbone; starts in M1):
    ```
-   tests/golden/run/hello.weft      + hello.out        # expected stdout, exit 0
-   tests/golden/run/fib.weft        + fib.out
-   tests/golden/error/assign_let.weft + assign_let.err # expected rendered compile error
-   tests/golden/panic/div_zero.weft + div_zero.out + exit code 1
+   tests/golden/run/hello.tn      + hello.out        # expected stdout, exit 0
+   tests/golden/run/fib.tn        + fib.out
+   tests/golden/error/assign_let.tn + assign_let.err # expected rendered compile error
+   tests/golden/panic/div_zero.tn + div_zero.out + exit code 1
    ```
    `conftest.py` auto-parametrizes over these directories; adding a test = adding two
    files. `--update-goldens` flag regenerates `.out` files after intentional changes.
-   A golden file's **first line** may be `# weft-test: key=value[, key=value]`; the only
+   A golden file's **first line** may be `# tantu-test: key=value[, key=value]`; the only
    recognized key in v1 is `budget` (int); unknown keys are an error. The runner executes
    files in-process (the §6.2 pipeline functions + `VM(stdout=StringIO, budget=...)`),
    never via subprocess.
 3. **Determinism rule**: the scheduler is deterministic (fixed round-robin + budget), so
    concurrent programs are golden-testable. Concurrency goldens run at both default budget
-   and `budget=1` (via a `# weft-test: budget=1` header comment the runner reads). `sleep`
+   and `budget=1` (via a `# tantu-test: budget=1` header comment the runner reads). `sleep`
    tests assert ordering only, never wall-clock durations.
-4. **Pipeline smoke**: one test imports every module and runs `hello.weft` through the five
+4. **Pipeline smoke**: one test imports every module and runs `hello.tn` through the five
    public functions asserting the §6.2 types at each boundary — the anti-interface-drift tripwire.
 5. **Seeded fuzz** (`test_fuzz.py`, zero new deps): (a) the lexer over random byte strings
    must either raise `LexError` or produce tokens — never crash and never silently drop a
@@ -1107,7 +1108,7 @@ rendered error and every golden `.err` file includes its code. Complete shipped 
 | E0123 | constructor-not-value | check | variant/struct constructor is not a first-class value (call-position only) |
 | E0124 | dup-variant | check | duplicate variant name '{name}' within an enum |
 | E0130 | import-cycle | check | import cycle: a -> b -> a |
-| E0131 | module-not-found | check | cannot find module '{name}' ({name}.weft) |
+| E0131 | module-not-found | check | cannot find module '{name}' ({name}.tn) |
 | E0132 | not-a-module-member | check | module '{m}' has no member '{name}' |
 | E0133 | module-not-value | check | module '{name}' is not a value |
 | E0134 | import-unsupported | check | import is only available when running a source file (not stdin/REPL) |

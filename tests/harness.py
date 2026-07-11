@@ -10,9 +10,9 @@ from __future__ import annotations
 import io
 import pathlib
 
-from weft.cli import compile_source, build_program
-from weft.vm import VM
-from weft.errors import WeftError, CheckErrors, render_error, render_errors
+from tantu.cli import compile_source, build_program
+from tantu.vm import VM
+from tantu.errors import TantuError, CheckErrors, render_error, render_errors
 
 GOLDEN = pathlib.Path(__file__).parent / "golden"
 ROOT = pathlib.Path(__file__).parent.parent
@@ -39,7 +39,7 @@ def run_capture(src: str, file: str, budget: int = 1000) -> tuple[str, str, int]
     except CheckErrors as e:
         err.write(render_errors(src, e.errors) + "\n")
         return out.getvalue(), err.getvalue(), 2
-    except WeftError as e:
+    except TantuError as e:
         err.write(render_error(src, e) + "\n")
         return out.getvalue(), err.getvalue(), 2
     clk = _VirtualClock()
@@ -60,16 +60,16 @@ def run_program(main_path, budget: int = 1000) -> tuple[str, str, int]:
 
 
 def parse_directives(src: str) -> dict:
-    """Parse a leading `# weft-test: key=value[, ...]` header (DESIGN.md §8.1).
+    """Parse a leading `# tantu-test: key=value[, ...]` header (DESIGN.md §8.1).
 
     v1 recognizes only `budget` (int). Unknown keys are an error. M1 does not use budget
     (single fiber, no preemption) but the header is validated for forward compatibility.
     """
     directives: dict = {}
     lines = src.splitlines()
-    if not lines or not lines[0].startswith("# weft-test:"):
+    if not lines or not lines[0].startswith("# tantu-test:"):
         return directives
-    body = lines[0][len("# weft-test:"):].strip()
+    body = lines[0][len("# tantu-test:"):].strip()
     for part in body.split(","):
         key, _, value = part.strip().partition("=")
         key = key.strip()
@@ -78,7 +78,7 @@ def parse_directives(src: str) -> dict:
         if key == "budget":
             directives["budget"] = int(value)
         else:
-            raise ValueError(f"unknown weft-test directive key {key!r}")
+            raise ValueError(f"unknown tantu-test directive key {key!r}")
     return directives
 
 

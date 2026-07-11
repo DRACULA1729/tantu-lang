@@ -1,6 +1,6 @@
 """pytest configuration: --update-goldens option + golden-directory parametrization.
 
-Adding a golden case = dropping a `<name>.weft` (and its expected `.out`/`.err`) into the
+Adding a golden case = dropping a `<name>.tn` (and its expected `.out`/`.err`) into the
 right directory; `pytest_generate_tests` auto-discovers it (DESIGN.md §8.1).
 """
 
@@ -25,13 +25,13 @@ def update_goldens(request) -> bool:
 
 def _cases(subdir: str) -> list[pathlib.Path]:
     d = GOLDEN / subdir
-    return sorted(d.glob("*.weft")) if d.exists() else []
+    return sorted(d.glob("*.tn")) if d.exists() else []
 
 
 def _module_cases() -> list[pathlib.Path]:
-    """Each multi-module golden is a directory under golden/modules/ holding a `main.weft`."""
+    """Each multi-module golden is a directory under golden/modules/ holding a `main.tn`."""
     d = GOLDEN / "modules"
-    return sorted(p for p in d.glob("*/main.weft")) if d.exists() else []
+    return sorted(p for p in d.glob("*/main.tn")) if d.exists() else []
 
 
 def pytest_generate_tests(metafunc):

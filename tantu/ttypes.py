@@ -1,6 +1,6 @@
-"""Weft's type representation (DESIGN.md §3.3).
+"""Tantu's type representation (DESIGN.md §3.3).
 
-Named `wtypes` (not `types`) to avoid shadowing the stdlib `types` module, which
+Named `ttypes` (not `types`) to avoid shadowing the stdlib `types` module, which
 `dataclasses` itself imports. Frozen dataclasses; structural equality is type equality.
 
 The full v1 set is defined now; M1's checker only ever produces `INT` (a knowing stub,
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 
 class Type:
-    """Base for all Weft types. Concrete types are frozen dataclasses below."""
+    """Base for all Tantu types. Concrete types are frozen dataclasses below."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -29,5 +29,5 @@ gpt_chat_links.txt
 
 # Build / packaging / coverage artifacts
 /build/
-weft.egg-info/
+tantu.egg-info/
 .coverage

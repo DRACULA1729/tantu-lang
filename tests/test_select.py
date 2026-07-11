@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import pytest
 
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.tokens import TokenType
-from weft.errors import (
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.tokens import TokenType
+from tantu.errors import (
     CheckErrors, ParseError,
     E_SELECT_ELSE, E_TYPE_MISMATCH, E_INTRINSIC_NOT_VALUE,
 )
-from weft.cli import front
+from tantu.cli import front
 from harness import run_capture
 
 
@@ -121,7 +121,7 @@ def _run(src: str, budgets=(1, 1000)) -> str:
     """Run at several budgets, assert identical deterministic output, return it."""
     outs = []
     for b in budgets:
-        out, err, code = run_capture(src, "sel.weft", budget=b)
+        out, err, code = run_capture(src, "sel.tn", budget=b)
         assert err == "", f"stderr at budget={b}:\n{err}"
         outs.append((out, code))
     assert len(set(outs)) == 1, f"non-deterministic across budgets: {outs}"
@@ -165,7 +165,7 @@ def test_closed_recv_arm_fires_none():
 def test_closed_send_arm_panics():
     src = ("fn main() -> Unit:\n    let c = chan[Int]()\n    close(c)\n    select:\n"
            "        send(c, 1) => print(\"sent\")\n")
-    out, _, code = run_capture(src, "sel.weft")
+    out, _, code = run_capture(src, "sel.tn")
     assert code == 1 and "R003" in out
 
 
@@ -180,7 +180,7 @@ def test_close_while_parked_wakes_recv_with_none():
 def test_deadlock_in_select():
     src = ("fn main() -> Unit:\n    let a = chan[Int]()\n    let b = chan[Int]()\n    select:\n"
            "        v = recv(a) => print(v)\n        w = recv(b) => print(w)\n")
-    out, _, code = run_capture(src, "sel.weft")
+    out, _, code = run_capture(src, "sel.tn")
     assert code == 1 and "R005" in out and "select:" in out    # trace points at the select header
 
 
@@ -237,9 +237,9 @@ def test_timeout_idiom_timeout_wins():
 
 import io
 
-from weft.cli import compile_source
-from weft.vm import VM
-from weft.values import Channel
+from tantu.cli import compile_source
+from tantu.vm import VM
+from tantu.values import Channel
 from harness import _VirtualClock
 
 
@@ -264,11 +264,11 @@ def test_server_loop_nonfiring_channel_waiters_stay_bounded():
            "            v = recv(data) => got = got + 1\n"
            "            s = recv(shutdown) => got = 200\n"
            "    print(got)\n")
-    code = compile_source(src, "leak.weft")
+    code = compile_source(src, "leak.tn")
     out = io.StringIO()
     clk = _VirtualClock()
     vm = VM(stdout=out, clock=clk.now, sleep_fn=clk.sleep)
-    rc = vm.run(code, src, "leak.weft")
+    rc = vm.run(code, src, "leak.tn")
     assert rc == 0
     assert out.getvalue() == "200\n"
     chans = [g for g in vm.globals if isinstance(g, Channel)]

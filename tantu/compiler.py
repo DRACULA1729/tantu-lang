@@ -10,15 +10,15 @@ falls off the end into an implicit `return ()`.
 
 from __future__ import annotations
 
-from weft import ast_nodes as A
-from weft.bytecode import Op, Instr, Code
-from weft.errors import Span
-from weft.resolve import (
+from tantu import ast_nodes as A
+from tantu.bytecode import Op, Instr, Code
+from tantu.errors import Span
+from tantu.resolve import (
     Global, Local, Capture, VariantRes, StructRes, Builtin as BuiltinRes, ImportedGlobal,
 )
-from weft.values import Builtin as RtBuiltin
-from weft.linker import CrossRef
-from weft.wtypes import UNIT
+from tantu.values import Builtin as RtBuiltin
+from tantu.linker import CrossRef
+from tantu.ttypes import UNIT
 
 _BINOP = {
     A.BinOpKind.ADD: Op.ADD, A.BinOpKind.SUB: Op.SUB, A.BinOpKind.MUL: Op.MUL,

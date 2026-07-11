@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from weft.bytecode import Op, Instr, Code
-from weft.errors import Span
+from tantu.bytecode import Op, Instr, Code
+from tantu.errors import Span
 
 
 @dataclass(frozen=True, slots=True)

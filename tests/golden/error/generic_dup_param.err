@@ -1,3 +1,3 @@
-generic_dup_param.weft:1:1: check error [E0101]: duplicate type parameter 'T'
+generic_dup_param.tn:1:1: check error [E0101]: duplicate type parameter 'T'
   fn bad[T, T](x: T) -> T:
   ^^^^^^

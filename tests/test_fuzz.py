@@ -10,10 +10,10 @@ from __future__ import annotations
 import random
 import string
 
-from weft.lexer import tokenize
-from weft.parser import parse
-from weft.tokens import TokenType
-from weft.errors import WeftError
+from tantu.lexer import tokenize
+from tantu.parser import parse
+from tantu.tokens import TokenType
+from tantu.errors import TantuError
 
 
 def test_lexer_never_crashes_on_random_input():
@@ -23,7 +23,7 @@ def test_lexer_never_crashes_on_random_input():
         s = "".join(rng.choice(string.printable) for _ in range(n))
         try:
             toks = tokenize(s, "<fuzz>")
-        except WeftError:
+        except TantuError:
             continue  # a clean, expected failure
         assert toks[-1].type is TokenType.EOF
 

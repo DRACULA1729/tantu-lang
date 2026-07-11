@@ -12,9 +12,9 @@ inline simple statement after ':' or a NEWLINE + INDENT … DEDENT suite.
 
 from __future__ import annotations
 
-from weft.errors import Span, ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
-from weft.tokens import Token, TokenType
-from weft import ast_nodes as A
+from tantu.errors import Span, ParseError, P_UNEXPECTED_TOKEN, P_UNEXPECTED_EOF, P_TOO_DEEP
+from tantu.tokens import Token, TokenType
+from tantu import ast_nodes as A
 
 _TT = TokenType
 

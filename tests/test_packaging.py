@@ -3,13 +3,13 @@
 import subprocess
 import sys
 
-from weft import __version__
+from tantu import __version__
 
 
-def test_python_m_weft_version() -> None:
-    """`python -m weft --version` exits 0 and prints the package version."""
+def test_python_m_tantu_version() -> None:
+    """`python -m tantu --version` exits 0 and prints the package version."""
     result = subprocess.run(
-        [sys.executable, "-m", "weft", "--version"],
+        [sys.executable, "-m", "tantu", "--version"],
         capture_output=True,
         text=True,
         timeout=60,
@@ -20,4 +20,4 @@ def test_python_m_weft_version() -> None:
     assert __version__ in result.stdout, (
         f"expected version {__version__!r} in output, got: {result.stdout!r}"
     )
-    assert "weft" in result.stdout
+    assert "tantu" in result.stdout

@@ -13,7 +13,7 @@ import pytest
 
 from harness import run_program
 
-EXAMPLES = sorted((pathlib.Path(__file__).parent.parent / "examples").glob("*.weft"))
+EXAMPLES = sorted((pathlib.Path(__file__).parent.parent / "examples").glob("*.tn"))
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=[p.stem for p in EXAMPLES])

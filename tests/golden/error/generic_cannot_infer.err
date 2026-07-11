@@ -1,3 +1,3 @@
-generic_cannot_infer.weft:5:13: check error [E0119]: cannot infer type argument 'T' of 'none_of'; add an annotation
+generic_cannot_infer.tn:5:13: check error [E0119]: cannot infer type argument 'T' of 'none_of'; add an annotation
       let z = none_of()
               ^^^^^^^^^

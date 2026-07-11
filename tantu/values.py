@@ -76,14 +76,14 @@ def _push_children(work: list, children, suffix: str) -> None:
 
 
 def render(v: object, nested: bool = False) -> str:
-    """Render a Weft value to its display string (Appendix B).
+    """Render a Tantu value to its display string (Appendix B).
 
     Iterative (explicit work stack) so deeply nested values — a 5000-deep cons list, say —
     render without hitting Python's recursion limit. Output is byte-identical to the original
     recursive form; the golden suite is the guardrail.
 
     Work-stack items are either a bare `str` (a literal token to emit) or a `(value, nested)`
-    pair. Value pairs are always 2-tuples built here, so a Weft tuple value (itself a Python
+    pair. Value pairs are always 2-tuples built here, so a Tantu tuple value (itself a Python
     tuple) can never be mistaken for a literal — literals are checked by exact `str` type.
     """
     out: list[str] = []

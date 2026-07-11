@@ -1,16 +1,16 @@
 panic [R001]: division or modulo by zero
-  in c at deep_panic.weft:2:5
+  in c at deep_panic.tn:2:5
       10 / 0
       ^^^^^^
-  in b at deep_panic.weft:4:5
+  in b at deep_panic.tn:4:5
       c()
       ^^^
-  in a at deep_panic.weft:6:5
+  in a at deep_panic.tn:6:5
       b()
       ^^^
-  in main at deep_panic.weft:8:11
+  in main at deep_panic.tn:8:11
       print(a())
             ^^^
-  in <module> at deep_panic.weft:1:1
+  in <module> at deep_panic.tn:1:1
   fn c() -> Int:
   ^^^^^^^^^^^^^^

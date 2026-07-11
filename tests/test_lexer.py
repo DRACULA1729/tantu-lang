@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from weft.lexer import tokenize
-from weft.tokens import TokenType as T
-from weft.errors import LexError, L_TABS_IN_INDENT, L_BAD_DEDENT, L_ILLEGAL_CHAR, L_UNTERMINATED_STRING
+from tantu.lexer import tokenize
+from tantu.tokens import TokenType as T
+from tantu.errors import LexError, L_TABS_IN_INDENT, L_BAD_DEDENT, L_ILLEGAL_CHAR, L_UNTERMINATED_STRING
 
 
 def types(src: str) -> list[T]:

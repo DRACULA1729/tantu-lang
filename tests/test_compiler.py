@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from weft.bytecode import Op
-from weft.cli import compile_source
+from tantu.bytecode import Op
+from tantu.cli import compile_source
 from harness import GOLDEN, check_or_update
 
 DIS_SNIPPETS = {
@@ -40,17 +40,17 @@ DIS_SNIPPETS = {
 
 @pytest.mark.parametrize("name", sorted(DIS_SNIPPETS))
 def test_dis_golden(name, update_goldens):
-    code = compile_source(DIS_SNIPPETS[name], f"{name}.weft")
+    code = compile_source(DIS_SNIPPETS[name], f"{name}.tn")
     check_or_update(GOLDEN / "dis" / f"{name}.txt", code.dis() + "\n", update_goldens)
 
 
 def test_module_ends_with_halt_and_spans_are_parallel():
-    code = compile_source("print(1)\n", "t.weft")
+    code = compile_source("print(1)\n", "t.tn")
     assert code.instrs[-1].op is Op.HALT
     assert len(code.instrs) == len(code.spans)
 
 
 def test_print_lowers_to_print_then_pop():
     # print(x) => LOAD_CONST; PRINT; POP; HALT  (PRINT pushes Unit, POP discards it)
-    ops = [i.op for i in compile_source("print(1)\n", "t.weft").instrs]
+    ops = [i.op for i in compile_source("print(1)\n", "t.tn").instrs]
     assert ops == [Op.LOAD_CONST, Op.PRINT, Op.POP, Op.HALT]

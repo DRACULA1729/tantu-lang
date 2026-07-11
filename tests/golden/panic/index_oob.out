@@ -1,7 +1,7 @@
 panic [R002]: list index out of range: 99
-  in main at index_oob.weft:3:11
+  in main at index_oob.tn:3:11
       print(xs[99])
             ^^^^^^
-  in <module> at index_oob.weft:1:1
+  in <module> at index_oob.tn:1:1
   fn main() -> Unit:
   ^^^^^^^

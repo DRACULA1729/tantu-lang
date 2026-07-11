@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import io
 
-from weft.cli import compile_source
-from weft.errors import R_STEP_LIMIT
-from weft.vm import VM
+from tantu.cli import compile_source
+from tantu.errors import R_STEP_LIMIT
+from tantu.vm import VM
 
 from harness import _VirtualClock
 

@@ -11,7 +11,7 @@ Written vector-general over pattern matrices (DESIGN.md §2.7, Fable ruling 5).
 
 from __future__ import annotations
 
-from weft.wtypes import EnumT, TupleT, BOOL, INT, STR, subst
+from tantu.ttypes import EnumT, TupleT, BOOL, INT, STR, subst
 
 TUPLE_KEY = "()"     # the single constructor key for a tuple sort
 

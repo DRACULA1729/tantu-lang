@@ -1,4 +1,4 @@
 panic [R005]: deadlock — every fiber is blocked
-  fiber 0 blocked in main at deadlock.weft:3:11
+  fiber 0 blocked in main at deadlock.tn:3:11
       print(recv(c))
             ^^^^^^^

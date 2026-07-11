@@ -1,62 +1,62 @@
 panic [R010]: call stack overflow (100000 frames)
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
-  in f at stack_overflow.weft:2:12
+  in f at stack_overflow.tn:2:12
       return f(n + 1)
              ^^^^^^^^
   … 99980 more frames

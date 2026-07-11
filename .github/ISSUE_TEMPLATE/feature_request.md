@@ -13,4 +13,4 @@ labels: enhancement
 ```
 
 **Does `DESIGN.md` already say anything about this?** If you know, point to the section.
-Weft's scope is deliberately small, so a feature has to earn its place in the spec.
+Tantu's scope is deliberately small, so a feature has to earn its place in the spec.

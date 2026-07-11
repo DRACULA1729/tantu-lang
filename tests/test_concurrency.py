@@ -32,33 +32,33 @@ PINGPONG = (
 
 @pytest.mark.parametrize("budget", [1, 3, 1000])
 def test_showcase_is_deterministic_across_budgets(budget):
-    out, err, code = run_capture(SHOWCASE, "showcase.weft", budget=budget)
+    out, err, code = run_capture(SHOWCASE, "showcase.tn", budget=budget)
     assert code == 0 and err == ""
     assert out == "Some(3.14159)\nSome(12.0)\n"
 
 
 @pytest.mark.parametrize("budget", [1, 2, 1000])
 def test_pingpong_deterministic(budget):
-    out, _, code = run_capture(PINGPONG, "pp.weft", budget=budget)
+    out, _, code = run_capture(PINGPONG, "pp.tn", budget=budget)
     assert code == 0
     assert out == "1\n2\n3\n4\n"
 
 
 def test_deadlock_detected():
     out, _, code = run_capture("fn main() -> Unit:\n    let c = chan[Int]()\n    print(recv(c))\n",
-                               "dl.weft")
+                               "dl.tn")
     assert code == 1 and "R005" in out
 
 
 def test_send_on_closed_panics():
     out, _, code = run_capture(
-        "fn main() -> Unit:\n    let c = chan[Int](1)\n    close(c)\n    send(c, 1)\n", "sc.weft")
+        "fn main() -> Unit:\n    let c = chan[Int](1)\n    close(c)\n    send(c, 1)\n", "sc.tn")
     assert code == 1 and "R003" in out
 
 
 def test_close_of_closed_panics():
     out, _, code = run_capture(
-        "fn main() -> Unit:\n    let c = chan[Int](1)\n    close(c)\n    close(c)\n", "cc.weft")
+        "fn main() -> Unit:\n    let c = chan[Int](1)\n    close(c)\n    close(c)\n", "cc.tn")
     assert code == 1 and "R004" in out
 
 
@@ -67,7 +67,7 @@ def test_sleep_orders_by_wake_time():
            "fn main() -> Unit:\n    let c = chan[Int](8)\n"
            "    spawn delayed(c, 30, 3)\n    spawn delayed(c, 10, 1)\n    spawn delayed(c, 20, 2)\n"
            "    print(recv(c))\n    print(recv(c))\n    print(recv(c))\n")
-    out, _, code = run_capture(src, "sl.weft")
+    out, _, code = run_capture(src, "sl.tn")
     assert code == 0 and out == "Some(1)\nSome(2)\nSome(3)\n"   # recv returns Option, ordered by wake
 
 
@@ -75,8 +75,8 @@ def test_sleep_orders_by_wake_time():
 
 import io
 
-from weft.cli import compile_source
-from weft.vm import VM
+from tantu.cli import compile_source
+from tantu.vm import VM
 from harness import _VirtualClock
 
 
@@ -87,10 +87,10 @@ def test_registry_prunes_done_fibers():
     src = ("fn noop(i: Int) -> Unit:\n    let x = i + i\n\n"
            "fn main() -> Unit:\n    var i = 0\n    while i < 10000:\n"
            "        spawn noop(i)\n        i = i + 1\n    sleep(1)\n")
-    code = compile_source(src, "many.weft")
+    code = compile_source(src, "many.tn")
     clk = _VirtualClock()
     vm = VM(stdout=io.StringIO(), clock=clk.now, sleep_fn=clk.sleep)
-    rc = vm.run(code, src, "many.weft")
+    rc = vm.run(code, src, "many.tn")
     assert rc == 0
     assert len(vm.registry) <= 1           # all DONE fibers pruned (main popped on exit too)
 
@@ -103,5 +103,5 @@ def test_fanin_total_independent_of_interleaving():
            "    var d = 0\n    while d < 3:\n        match recv(done):\n            Some(_) => d = d + 1\n            None => break\n"
            "    close(out)\n    var total = 0\n    loop:\n        match recv(out):\n            Some(v) => total = total + v\n            None => break\n    print(total)\n")
     for budget in (1, 1000):
-        out, _, code = run_capture(src, "fi.weft", budget=budget)
+        out, _, code = run_capture(src, "fi.tn", budget=budget)
         assert code == 0 and out == "189\n"      # 10+11+12 + 20+21+22 + 30+31+32
