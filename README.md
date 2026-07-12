@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/tantu-file-dark.svg">
+    <img src="assets/tantu-file-light.svg" width="96" alt="Tantu logo">
+  </picture>
+</p>
+
 # Tantu
 
 [![CI](https://github.com/DRACULA1729/tantu-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/DRACULA1729/tantu-lang/actions/workflows/ci.yml)
