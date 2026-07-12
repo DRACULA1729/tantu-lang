@@ -23,7 +23,7 @@ classifiers = [
 Homepage = "https://github.com/DRACULA1729/tantu-lang"
 Repository = "https://github.com/DRACULA1729/tantu-lang"
 Issues = "https://github.com/DRACULA1729/tantu-lang/issues"
-Changelog = "https://github.com/DRACULA1729/tantu-lang/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/DRACULA1729/tantu-lang/blob/master/CHANGELOG.md"
 
 [project.scripts]
 tantu = "tantu.cli:main"
