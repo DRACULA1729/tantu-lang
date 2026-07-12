@@ -6,7 +6,10 @@ import pytest
 
 from tantu.lexer import tokenize
 from tantu.tokens import TokenType as T
-from tantu.errors import LexError, L_TABS_IN_INDENT, L_BAD_DEDENT, L_ILLEGAL_CHAR, L_UNTERMINATED_STRING
+from tantu.errors import (
+    LexError, L_TABS_IN_INDENT, L_BAD_DEDENT, L_ILLEGAL_CHAR, L_UNTERMINATED_STRING,
+    L_INVALID_NUMBER,
+)
 
 
 def types(src: str) -> list[T]:
@@ -105,3 +108,36 @@ def test_span_offsets_point_at_source():
 def test_leading_indentation_emits_indent():
     # A top-level line that starts indented emits INDENT (the parser rejects it later).
     assert types("  ab")[0] is T.INDENT
+
+
+# -- W19: malformed numeric literals are L006, well-placed underscores decode ---
+
+@pytest.mark.parametrize("src", [
+    "1_",       # trailing underscore
+    "1__0",     # doubled underscore
+    "1_.5",     # underscore leading the fraction dot
+    "1.5_",     # trailing underscore in a fraction
+    "1e3_",     # trailing underscore in an exponent
+])
+def test_misplaced_underscore_in_number_is_L006(src):
+    with pytest.raises(LexError) as e:
+        tokenize(src, "<t>")
+    assert e.value.code == L_INVALID_NUMBER
+    assert e.value.code == "L006"
+
+
+def test_underscore_separated_ints_decode():
+    toks = tokenize("1_000 1_000_000", "<t>")
+    assert toks[0].type is T.INT and toks[0].value == 1000
+    assert toks[1].type is T.INT and toks[1].value == 1_000_000
+
+
+def test_leading_underscore_is_an_identifier_not_a_number():
+    # `_1` never enters the number path: it lexes as a plain identifier.
+    assert types("_1") == [T.IDENT, T.NEWLINE, T.EOF]
+
+
+def test_digit_dot_underscore_is_field_access_not_L006():
+    # DECISIONS.md D12: `1._5` is INT DOT IDENT (rejected later by the checker),
+    # not a malformed number — L006 covers digit-adjacent underscores only.
+    assert types("1._5") == [T.INT, T.DOT, T.IDENT, T.NEWLINE, T.EOF]
