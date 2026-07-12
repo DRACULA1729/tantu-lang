@@ -111,8 +111,8 @@ Ready arms are polled in source order, so scheduling stays deterministic and tes
 Tantu needs Python 3.12 or newer and installs a `tantu` command.
 
 ```
-pip install .                                              # from a clone
-pipx install git+https://github.com/DRACULA1729/tantu-lang  # isolated, without a clone
+pip install tantu     # from PyPI (or: pipx install tantu)
+pip install .         # from a clone
 ```
 
 ## Usage
