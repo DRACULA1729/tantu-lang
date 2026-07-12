@@ -1,6 +1,6 @@
 name: Sync playground assets to tantu-web
 
-# On every language change on main, rebuild the wheel + examples and commit them to tantu-web's
+# On every language change on master, rebuild the wheel + examples and commit them to tantu-web's
 # playground/public/ (the vendored assets its Netlify build ships). The push to tantu-web is what
 # triggers the site deploy, so the public playground tracks the language automatically.
 #
@@ -9,7 +9,7 @@ name: Sync playground assets to tantu-web
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "tantu/**"
       - "examples/**"

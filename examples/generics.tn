@@ -1,5 +1,5 @@
 # Generics let one definition work over any type. They are fully parametric (no bounds) and
-# ERASED — a generic fn compiles to a single function; type arguments are always inferred.
+# ERASED: a generic fn compiles to a single function; type arguments are always inferred.
 
 fn map[T, U](xs: List[T], f: (T) -> U) -> List[U]:
     var out: List[U] = []

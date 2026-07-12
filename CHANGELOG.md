@@ -4,7 +4,7 @@ All notable changes to Tantu are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Tantu uses
 [semantic versioning](https://semver.org/).
 
-## 0.1.0 - 2026-07-10
+## 0.1.0 - 2026-07-13
 
 First public release.
 

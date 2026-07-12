@@ -13,6 +13,9 @@ A statically-typed, Python-readable language with fibers and channels — compil
 bytecode and run on a hand-built stack VM, implemented in Python 3.12 with zero
 third-party runtime dependencies.
 
+**Try it without installing anything:** [tantu-play.netlify.app](https://tantu-play.netlify.app)
+has the full guide and an in-browser playground running this interpreter.
+
 - **Design contract:** [`DESIGN.md`](DESIGN.md) (v1.2) is the single source of truth.
 - **Decisions log:** [`DECISIONS.md`](DECISIONS.md) records anything the design leaves silent.
 - **Status:** M1–M9 complete — a full pipeline (lexer → parser → checker → compiler → linker → stack VM),
