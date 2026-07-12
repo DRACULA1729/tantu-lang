@@ -24,6 +24,9 @@ First public release.
   `--version`. `run -` reads a program from stdin.
 - An append-only error-code registry (`tantu/errors.py`, mirrored in `DESIGN.md` Appendix C):
   `L` lex, `P` parse, `E` check, `R` runtime.
+- Packaging: `pip install .` (or `pipx install .`) installs the `tantu` command. MIT license,
+  and a GitHub Actions CI matrix (Linux/macOS, Python 3.12/3.13) running the test suite and
+  every example.
 - Zero third-party runtime dependencies.
 
 ### Hardening
@@ -42,3 +45,7 @@ This release closed a set of crash and soundness holes found in pre-release audi
   producing an unsound result.
 - Expected types now flow into call arguments and list/tuple elements, so `Option`/`Result`
   values need fewer annotations.
+- Values render iteratively (an explicit work stack), so printing a deeply nested value —
+  a 5000-deep cons list, say — cannot overflow the interpreter stack.
+- Scheduler leak fixes: finished fibers are pruned from the registry, and a winning
+  `select` arm eagerly dequeues its sibling waiters from the other channels' wait queues.

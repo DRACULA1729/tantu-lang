@@ -1101,6 +1101,11 @@ class _Checker:
             if pat.name in _RESERVED or pat.name in _PRELUDE_NAMES:
                 self.error(E_INTRINSIC_NOT_VALUE,
                            f"cannot rebind prelude name '{pat.name}'", pat.span)
+            elif scope.local(pat.name) is not None:
+                # intra-pattern duplicate: each arm checks in a fresh child scope, so a prior
+                # entry here can only be another binder of this same pattern (§2.2). Sibling
+                # arms have their own scopes and may legitimately reuse binder names.
+                self.error(E_DUPLICATE, f"duplicate binder '{pat.name}' in pattern", pat.span)
             slot = value_res.index if isinstance(value_res, Global) else value_res.slot
             pat.resolved = scope.declare_at(pat.name, ty, slot, pat.span).resolution()
             return exhaustive.WILD

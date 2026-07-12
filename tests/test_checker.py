@@ -432,6 +432,11 @@ def test_expected_type_flows_into_list_elements():
 
 
 def test_expected_type_flows_into_call_argument():
+    check_src("fn f(x: Option[Int]) -> Unit:\n    print(1)\n"
+              "fn main() -> Unit:\n    f(None)\n")
+
+
+def test_expected_type_flows_into_nested_call_argument():
     check_src("fn f(x: Option[Option[Int]]) -> Unit:\n    print(1)\n"
               "fn main() -> Unit:\n    f(Some(None))\n")
 
@@ -517,6 +522,19 @@ def test_legit_inner_scope_shadowing_still_works():
 def test_same_binder_across_match_arms_still_works():
     check_src("enum E:\n    A(Int)\n    B(Int)\n"
               "fn f(e: E) -> Int:\n    match e:\n        A(v) => v\n        B(v) => v\n")
+
+
+def test_duplicate_binder_within_one_pattern_is_rejected():
+    # E(v, v) reuses a binder inside a single pattern: exactly E0102, and (per W14) no
+    # exhaustiveness/unreachable noise from the malformed arm.
+    errs = errors_of("enum E:\n    P(Int, Int)\n"
+                     "fn f(e: E) -> Int:\n    match e:\n        P(v, v) => v\n")
+    assert [e.code for e in errs] == [E_DUPLICATE]
+
+
+def test_match_binder_may_shadow_outer_binding():
+    check_src("enum E:\n    A(Int)\n"
+              "fn f(e: E) -> Int:\n    let v = 9\n    match e:\n        A(v) => v\n")
 
 
 def test_malformed_ctor_pattern_binds_binders_no_cascade():

@@ -236,6 +236,28 @@ def test_long_flat_chain_at_cap_still_parses():
     parse(tokenize(src, "<t>"))  # must not raise
 
 
+# -- W20: layout tokens get friendly names in diagnostics ----------------------
+
+def test_unexpected_newline_names_end_of_line():
+    # A dangling operator runs into the line end: the message says "end of line",
+    # never the raw token-type name NEWLINE.
+    with pytest.raises(ParseError) as e:
+        parse(tokenize("1 +\n", "<t>"))
+    assert e.value.code == P_UNEXPECTED_TOKEN
+    assert "unexpected end of line" in e.value.message
+    assert "NEWLINE" not in e.value.message
+
+
+def test_unexpected_dedent_names_end_of_block():
+    # An arm head with no body: the block closes early and the DEDENT surfaces
+    # as "end of block", never the raw token-type name.
+    with pytest.raises(ParseError) as e:
+        parse(tokenize("match x:\n    1 =>\n", "<t>"))
+    assert e.value.code == P_UNEXPECTED_TOKEN
+    assert "unexpected end of block" in e.value.message
+    assert "DEDENT" not in e.value.message
+
+
 def test_unexpected_indent_message_is_grammatical():
     # Fix 4: layout name for INDENT is "indentation", not "an indented block".
     with pytest.raises(ParseError) as e:

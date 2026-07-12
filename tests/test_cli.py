@@ -287,6 +287,100 @@ def test_bom_stdin_is_stripped(monkeypatch):
     assert "hi" in out
 
 
+def test_bom_file_runs(monkeypatch, tmp_path):
+    """W19: a UTF-8 file with a leading BOM runs identically to one without —
+    files are read as utf-8-sig, so the BOM never reaches the lexer."""
+    prog = tmp_path / "bom.tn"
+    prog.write_bytes(b'\xef\xbb\xbfprint("hi")\n')
+    rc, out, err = call_main(monkeypatch, ["run", str(prog)])
+    assert rc == 0, err
+    assert "hi" in out
+    assert err == ""
+
+
+# --- multi-module file path: import graph discovery, cycles, missing modules ----------
+
+
+def _write_two_modules(tmp_path):
+    (tmp_path / "mathlib.tn").write_text(
+        "fn square(n: Int) -> Int:\n    n * n\nlet answer = 42\n")
+    root = tmp_path / "main.tn"
+    root.write_text(
+        "import mathlib\nfn main() -> Unit:\n    print(mathlib.square(5))\n")
+    return root
+
+
+def test_multi_module_run(monkeypatch, tmp_path):
+    root = _write_two_modules(tmp_path)
+    rc, out, err = call_main(monkeypatch, ["run", str(root)])
+    assert rc == 0, err
+    assert "25" in out
+    assert err == ""
+
+
+def test_multi_module_check_and_dis(monkeypatch, tmp_path):
+    root = _write_two_modules(tmp_path)
+    rc, out, err = call_main(monkeypatch, ["check", str(root)])
+    assert rc == 0 and out == "" and err == ""
+    rc, out, err = call_main(monkeypatch, ["dis", str(root)])
+    assert rc == 0 and out != "" and err == ""
+
+
+def test_diamond_import_visits_shared_module_once(monkeypatch, tmp_path):
+    """root -> a -> c and root -> c: the second visit of c hits the 'done' fast path;
+    its top-level initializer must still run exactly once."""
+    (tmp_path / "c.tn").write_text('let base = 10\nprint("c-init")\n')
+    (tmp_path / "a.tn").write_text("import c\nfn double(n: Int) -> Int:\n    n * 2\n")
+    root = tmp_path / "main.tn"
+    root.write_text(
+        "import a\nimport c\nfn main() -> Unit:\n    print(a.double(c.base))\n")
+    rc, out, err = call_main(monkeypatch, ["run", str(root)])
+    assert rc == 0, err
+    assert "20" in out
+    assert out.count("c-init") == 1
+
+
+def test_import_cycle_is_a_check_error(monkeypatch, tmp_path):
+    (tmp_path / "a.tn").write_text("import b\nlet x = 1\n")
+    (tmp_path / "b.tn").write_text("import a\nlet y = 2\n")
+    rc, out, err = call_main(monkeypatch, ["run", str(tmp_path / "a.tn")])
+    assert rc == 2
+    assert out == ""
+    assert "import cycle" in err
+    assert "Traceback" not in err
+
+
+def test_missing_module_is_a_check_error(monkeypatch, tmp_path):
+    root = tmp_path / "main.tn"
+    root.write_text("import nosuch\nlet x = 1\n")
+    rc, out, err = call_main(monkeypatch, ["check", str(root)])
+    assert rc == 2
+    assert out == ""
+    assert "cannot find module 'nosuch'" in err
+
+
+def test_file_check_error_routes_to_stderr(monkeypatch, tmp_path):
+    """CheckErrors raised on the multi-module file path renders to stderr, exit 2."""
+    prog = tmp_path / "bad.tn"
+    prog.write_text("let x = undefined_name\n")
+    rc, out, err = call_main(monkeypatch, ["check", str(prog)])
+    assert rc == 2
+    assert out == ""
+    assert "check error" in err
+    assert "Traceback" not in err
+
+
+def test_file_parse_error_routes_to_stderr(monkeypatch, tmp_path):
+    """A single TantuError (parse error) on the file path renders to stderr, exit 2."""
+    prog = tmp_path / "bad.tn"
+    prog.write_text("let x = 1 +\n")
+    rc, out, err = call_main(monkeypatch, ["run", str(prog)])
+    assert rc == 2
+    assert out == ""
+    assert "parse error" in err
+    assert "Traceback" not in err
+
+
 def test_no_args_starts_repl(monkeypatch):
     rc, out, err = call_main(monkeypatch, [], stdin_text="")
     assert rc == 0
@@ -574,6 +668,89 @@ def test_long_flat_chain_within_cap_runs(monkeypatch):
     assert rc == 0, err
     assert out.strip() == "2000"
     assert "internal error" not in err
+
+
+# --- remaining main() boundary branches, driven in-process ------------------------------
+
+
+class _BrokenStream(io.StringIO):
+    """A stream whose write/flush raise BrokenPipeError, like a pipe whose reader quit.
+    fileno() (inherited from StringIO) raises UnsupportedOperation — an OSError subclass —
+    so cli._silence takes its guarded no-op path in-process."""
+
+    def write(self, s):
+        raise BrokenPipeError
+
+    def flush(self):
+        raise BrokenPipeError
+
+
+def test_none_std_streams_are_substituted(monkeypatch):
+    """D20: CPython nulls a sys stream whose fd was closed at launch; main() must
+    substitute devnull for all three and keep working."""
+    monkeypatch.setattr(sys, "stdin", None)
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    assert main(["--version"]) == 0
+    monkeypatch.setattr(sys, "stdin", None)
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    assert main(["frobnicate"]) == 2      # usage error keeps its exit code, output discarded
+
+
+def test_keyboard_interrupt_with_broken_streams_still_130(monkeypatch):
+    """D19: SIGINT wins over a broken pipe — the handler's own stderr write and the
+    teardown flushes may raise BrokenPipeError, yet the exit code stays 130."""
+    import tantu.cli as climod
+    monkeypatch.setattr(climod, "run_text", _raiser(KeyboardInterrupt))
+    monkeypatch.setattr(sys, "stdout", _BrokenStream())
+    monkeypatch.setattr(sys, "stderr", _BrokenStream())
+    monkeypatch.setattr(sys, "stdin", io.StringIO("print(1)\n"))
+    original = signal.getsignal(signal.SIGINT)   # the handler sets SIG_IGN in THIS process
+    try:
+        rc = main(["run", "-"])
+    finally:
+        signal.signal(signal.SIGINT, original)
+    assert rc == 130
+
+
+def test_broken_pipe_in_process_returns_141(monkeypatch):
+    """D16: a BrokenPipeError escaping a command is a silent exit 141 — nothing is
+    written to either stream on the way out."""
+    import tantu.cli as climod
+    monkeypatch.setattr(climod, "run_text", _raiser(BrokenPipeError))
+    rc, out, err = call_main(monkeypatch, ["run", "-"], stdin_text="print(1)\n")
+    assert rc == 141
+    assert out == ""
+    assert err == ""
+
+
+# --- true subprocess invocations (beyond the exception-boundary suite above) -----------
+
+
+def test_subprocess_version():
+    result = run_tantu(["--version"])
+    assert result.returncode == 0
+    assert re.match(rb"tantu \d+\.\d+\.\d+", result.stdout)
+    assert result.stderr == b""
+
+
+def test_subprocess_multi_module_run(tmp_path):
+    root = _write_two_modules(tmp_path)
+    result = run_tantu(["run", str(root)])
+    out = _decoded(result)
+    assert result.returncode == 0, out
+    assert "25" in result.stdout.decode()
+    assert result.stderr == b""
+
+
+def test_subprocess_bom_file_runs(tmp_path):
+    prog = tmp_path / "bom.tn"
+    prog.write_bytes(b'\xef\xbb\xbfprint("hi")\n')
+    result = run_tantu(["run", str(prog)])
+    out = _decoded(result)
+    assert result.returncode == 0, out
+    assert "hi" in result.stdout.decode()
 
 
 def _raiser(exc):
