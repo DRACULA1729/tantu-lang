@@ -1,0 +1,35 @@
+{
+  "name": "tantu",
+  "displayName": "Tantu Language",
+  "description": "Language support for Tantu (.tn): syntax highlighting, file icon, and editing basics.",
+  "version": "0.1.0",
+  "publisher": "tantu-lang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.64.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "tantu",
+        "aliases": ["Tantu", "tantu"],
+        "extensions": [".tn"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/tantu-file-light.svg",
+          "dark": "./icons/tantu-file-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tantu",
+        "scopeName": "source.tantu",
+        "path": "./syntaxes/tantu.tmLanguage.json"
+      }
+    ]
+  }
+}
