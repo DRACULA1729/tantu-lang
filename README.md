@@ -8,23 +8,23 @@
 # Tantu
 
 [![CI](https://github.com/DRACULA1729/tantu-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/DRACULA1729/tantu-lang/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/tantu)](https://pypi.org/project/tantu/)
 
-A statically-typed, Python-readable language with fibers and channels — compiled to
-bytecode and run on a hand-built stack VM, implemented in Python 3.12 with zero
-third-party runtime dependencies.
+A typed language with green threads, a type checker and a bytecode VM, in about 6,000 lines
+of plain Python you can read in a weekend.
 
-**Try it without installing anything:** [tantu-play.netlify.app](https://tantu-play.netlify.app)
-has the full guide and an in-browser playground running this interpreter.
+**Try it in your browser** at [tantu-play.netlify.app/play](https://tantu-play.netlify.app/play/),
+with nothing to install, or run `pip install tantu` (Python 3.12+).
+
+Tantu has static types with no null, pattern matching, closures, generics, multi-file modules,
+and fibers that talk over channels with `select`. The whole pipeline is
+lexer → parser → checker → compiler → linker → stack VM. Each stage is one small module with
+no third-party dependencies, so you can read the whole thing front to back.
+[Read the implementation](#read-the-implementation) gives you the order.
 
 - **Design contract:** [`DESIGN.md`](DESIGN.md) (v1.2) is the single source of truth.
 - **Decisions log:** [`DECISIONS.md`](DECISIONS.md) records anything the design leaves silent.
-- **Status:** M1–M9 complete — a full pipeline (lexer → parser → checker → compiler → linker → stack VM),
-  static types with no null (`Option`/`Result`), pattern matching, closures, fibers + channels
-  with `select`, multi-file modules, and user-defined generics. The full test suite and all
-  examples run in CI.
-
-See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`CONTRIBUTING.md`](CONTRIBUTING.md)
-if you want to hack on it.
+- **Release notes:** [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Why Tantu
 
@@ -65,6 +65,30 @@ clarity, not throughput. v1 is deliberately small: erased generics, one concurre
 model, one way to handle errors. Need performance? Use Go or Rust. Need libraries? Use
 Python. Tantu is for when you'd rather have a language you can hold in your head, with
 the safety properties above spelled out.
+
+## Read the implementation
+
+If you want to see how a real language works end to end, read the modules in this order.
+Each file opens with a docstring that says what it does and which part of
+[`DESIGN.md`](DESIGN.md) it implements.
+
+| # | Stage | Files | Lines | What to look at |
+|---|---|---|---|---|
+| 1 | Lexing | [`tokens.py`](tantu/tokens.py), [`lexer.py`](tantu/lexer.py) | 368 | How INDENT/DEDENT tokens come from an indent stack, Python style |
+| 2 | Parsing | [`parser.py`](tantu/parser.py), [`ast_nodes.py`](tantu/ast_nodes.py) | 1,412 | A hand-written recursive-descent parser with a precedence ladder |
+| 3 | Checking | [`resolve.py`](tantu/resolve.py), [`checker.py`](tantu/checker.py), [`ttypes.py`](tantu/ttypes.py) | 1,802 | Type inference, erased generics, and the one rule that makes data races impossible (no `var` captured by a closure or fiber) |
+| 4 | Exhaustiveness | [`exhaustive.py`](tantu/exhaustive.py) | 165 | Maranget's pattern-matrix algorithm: missing-case witnesses and unreachable arms |
+| 5 | Compiling | [`compiler.py`](tantu/compiler.py), [`bytecode.py`](tantu/bytecode.py) | 686 | AST straight to stack bytecode, with no IR and no optimizer |
+| 6 | Linking | [`linker.py`](tantu/linker.py) | 86 | How separately compiled modules share one global table |
+| 7 | Running | [`vm.py`](tantu/vm.py), [`values.py`](tantu/values.py) | 714 | The stack VM and a deterministic, cooperative fiber scheduler with channels and timers |
+
+Errors from every stage go through one renderer in [`errors.py`](tantu/errors.py). The
+builtins live in [`prelude.py`](tantu/prelude.py).
+
+To watch the stages work on your own code, open the
+[playground](https://tantu-play.netlify.app/play/) and switch between the Tokens, AST and
+Bytecode tabs. The [Under the hood](https://tantu-play.netlify.app/guide/under-the-hood) page
+of the guide walks through the same pipeline in prose.
 
 ## A taste
 
@@ -186,3 +210,10 @@ python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 ```
+
+## Contributing
+
+Want to help? Start with an issue labelled
+[good first issue](https://github.com/DRACULA1729/tantu-lang/labels/good%20first%20issue).
+Each one names the files to change and the test that proves it works.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) explains the setup, the golden tests and the PR rules.
